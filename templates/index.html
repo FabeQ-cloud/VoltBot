@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VoltBot - Premium Pricing</title>
+    <style>
+        body {
+            background-color: #1a1a2e;
+            color: #ffffff;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 0;
+        }
+        .navbar {
+            background-color: #16162a;
+            padding: 20px;
+            font-size: 24px;
+            font-weight: bold;
+            color: #00fff0;
+            text-align: center;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+        }
+        .container {
+            max-width: 1000px;
+            margin: 40px auto;
+            padding: 20px;
+            text-align: center;
+        }
+        h1 {
+            color: #00fff0;
+            font-size: 36px;
+            margin-bottom: 10px;
+        }
+        .subtitle {
+            color: #b0b0d0;
+            font-size: 18px;
+            margin-bottom: 40px;
+        }
+        .stats {
+            background-color: #16162a;
+            padding: 15px 30px;
+            border-radius: 8px;
+            display: inline-block;
+            border: 1px solid #303056;
+            margin-bottom: 40px;
+            font-size: 16px;
+        }
+        /* Styl kafelków cennika */
+        .pricing-table {
+            display: flex;
+            justify-content: center;
+            gap: 30px;
+            flex-wrap: wrap;
+            margin-top: 20px;
+        }
+        .card {
+            background-color: #16162a;
+            border: 1px solid #303056;
+            border-radius: 16px;
+            padding: 40px 30px;
+            width: 280px;
+            transition: 0.3s;
+            position: relative;
+            box-shadow: 0 8px 16px rgba(0,0,0,0.4);
+        }
+        .card:hover {
+            transform: translateY(-10px);
+            border-color: #00fff0;
+            box-shadow: 0 12px 24px rgba(0, 255, 240, 0.2);
+        }
+        .card.popular {
+            border-color: #00fff0;
+            background: linear-gradient(180deg, #16162a 0%, #1f1f3e 100%);
+        }
+        .badge {
+            position: absolute;
+            top: -15px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: linear-gradient(45deg, #00fff0, #0088ff);
+            color: #1a1a2e;
+            padding: 5px 15px;
+            font-size: 12px;
+            font-weight: bold;
+            border-radius: 20px;
+            text-transform: uppercase;
+        }
+        .plan-name {
+            font-size: 22px;
+            font-weight: bold;
+            margin-bottom: 15px;
+        }
+        .price {
+            font-size: 42px;
+            font-weight: bold;
+            color: #00fff0;
+            margin-bottom: 20px;
+        }
+        .price span {
+            font-size: 16px;
+            color: #b0b0d0;
+        }
+        .features {
+            list-style: none;
+            padding: 0;
+            margin: 0;               
+            margin-bottom: 30px;     
+            text-align: left;
+}
+        .features li {
+            margin-bottom: 12px;
+            font-size: 15px;
+            color: #e0e0f0;
+        }
+        .features li::before {
+            content: "⚡ ";
+            color: #00fff0;
+        }
+        .btn {
+            display: block;
+            background: linear-gradient(45deg, #303056, #40407a);
+            color: #ffffff;
+            padding: 12px;
+            text-decoration: none;
+            font-weight: bold;
+            border-radius: 8px;
+            margin-top: 25px;
+            transition: 0.3s;
+            border: 1px solid transparent;
+        }
+        .card.popular .btn {
+            background: linear-gradient(45deg, #00fff0, #0088ff);
+            color: #1a1a2e;
+        }
+        .btn:hover {
+            transform: scale(1.02);
+            box-shadow: 0 0 15px rgba(0, 255, 240, 0.4);
+        }
+    </style>
+</head>
+<body>
+
+    <div class="navbar">⚡ VoltBot Dashboard</div>
+
+    <div class="container">
+        <h1>Volt Premium License</h1>
+        <p class="subtitle">Unlock the full power of advanced economy and exclusive commands.</p>
+        
+        <div class="stats">
+            <strong>Bot Status:</strong> <span style="color: #00ff88;">Online 🟢</span> &nbsp;|&nbsp; 
+            <strong>Active Guilds:</strong> <span style="color: #00fff0;">{{ guild_count }}</span>
+        </div>
+
+        <div class="pricing-table">
+            <div class="card">
+    <div class="plan-name">Monthly Pass</div>
+    <div class="price">$4.99 <span>/ 30 days</span></div>
+    <ul class="features">
+        <li>Full Access to /daily</li>
+        <li>Premium Role on Support</li>
+        <li>Advanced Economy Tools</li>
+        <li>24/7 Uptime Guaranteed</li>
+    </ul>
+    <a href="https://www.paypal.com/cgi-bin/webscr?cmd=_xclick&business=fabianekzielenkiewicz@gmail.com&item_name=VoltBot%20Premium%20-%2030%20Days&amount=4.99&currency_code=USD" target="_blank" class="btn">Buy via PayPal</a>
+</div>
+
+<div class="card popular">
+    <div class="badge">Best Value</div>
+    <div class="plan-name">Lifetime Pro</div>
+    <div class="price">$14.99 <span>/ forever</span></div>
+    <ul class="features">
+        <li>All Monthly Features</li>
+        <li>One-time Payment</li>
+        <li>No Renewal Needed</li>
+        <li>Priority Feature Requests</li>
+        <li>Exclusive Bot Badge</li>
+    </ul>
+    <a href="https://www.paypal.com/cgi-bin/webscr?cmd=_xclick&business=fabianekzielenkiewicz@gmail.com&item_name=VoltBot%20Premium%20-%20Lifetime&amount=14.99&currency_code=USD" target="_blank" class="btn">Buy via PayPal</a>
+</div>
+        </div>
+    </div>
+
+<div class="profile-checker" style="background-color: #16162a; border: 1px solid #303056; border-radius: 16px; padding: 30px; max-width: 500px; margin: 50px auto 0 auto; box-shadow: 0 8px 16px rgba(0,0,0,0.4); text-align: center;">
+            <h2 style="color: white; margin-top: 0;">🔍 Check Player Profile</h2>
+            <p style="color: #b0b0d0; font-size: 14px;">Enter Discord User ID to check balance and premium status.</p>
+            
+            <form method="POST" action="/" style="margin-top: 20px;">
+                <div style="display: flex; gap: 10px; justify-content: center;">
+                    <input type="text" name="user_id" placeholder="e.g. 123456789" required style="background-color: #1a1a2e; border: 1px solid #303056; color: white; padding: 12px; border-radius: 8px; font-size: 16px; width: 60%;">
+                    <button type="submit" style="background: linear-gradient(45deg, #00fff0, #0088ff); color: #1a1a2e; border: none; padding: 12px 20px; font-weight: bold; border-radius: 8px; cursor: pointer;">Check</button>
+                </div>
+            </form>
+
+            {% if user_data %}
+            <div style="margin-top: 25px; padding: 15px; background-color: #1a1a2e; border-radius: 8px; text-align: left; border-left: 4px solid #00fff0;">
+                <h3 style="margin-top: 0; color: #00fff0;">👤 {{ user_data.username }}</h3>
+                <p style="color: white;"><strong>User ID:</strong> {{ user_data.id }}</p>
+                <p style="color: white;"><strong>Volt Coins:</strong> <span style="color: #ffd700; font-weight: bold;">🪙 {{ user_data.coins }}</span></p>
+                <p style="color: white;"><strong>Premium Status:</strong> 
+                    {% if user_data.premium %}
+                        <span style="color: #00ff88; font-weight: bold;">👑 Premium Active</span>
+                    {% else %}
+                        <span style="color: #ff4a4a;">❌ Non-Premium</span>
+                    {% endif %}
+                </p>
+            </div>
+            {% endif %}
+        </div>
+    
+</body>
+</html>
