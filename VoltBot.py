@@ -16,7 +16,11 @@ from www import app # type: ignore
 import www # type: ignore
 import database # type: ignore
 import secrets
+import os
+from dotenv import load_dotenv
 
+load_dotenv()
+TOKEN = os.getenv("DISCORD_TOKEN")
 TOKEN = "MTUxMjAwMDUxNjg2MTg1Nzk4Mg.G1RCbd.7LKKyjHe3--zMMFj82PGxLCvA6m48rJJ99HmUc"
 
 user_message_times = defaultdict(list)
@@ -1682,18 +1686,30 @@ async def license_check(interaction: discord.Interaction):
         )
 
 async def main():
-    config = uvicorn.Config(app, host="0.0.0.0", port=8000, log_level="info")
-    server = uvicorn.Server(config)
+    import os
+    import uvicorn
+    from dotenv import load_dotenv
+
+    load_dotenv()
+    TOKEN = os.getenv("DISCORD_TOKEN")
+
+    if not TOKEN or TOKEN == "None":
+        print("\n[❌ BŁĄD] Python nie znalazł tokenu w pliku .env!")
+        print("[💡 PORADA] Upewnij się, że plik nazywa się dokładnie '.env' (z kropką na początku)")
+        print("[💡 PORADA] oraz że w środku masz linijkę: DISCORD_TOKEN=twój_nowy_token\n")
+        # Jeśli testujesz LOKALNIE i plik .env nie działa, wklej tymczasowo nowy token poniżej:
+        TOKEN = "TUTAJ_MOŻESZ_WKLEIĆ_NOWY_TOKEN_TYLKO_DO_TESTU_LOKALNEGO"
+
+    print(f"[🤖 INFO] Próba uruchomienia bota... Długość tokenu: {len(str(TOKEN)) if TOKEN else 0}")
     
-   
+    config = uvicorn.Config("VoltBot:app", host="0.0.0.0", port=8000, log_level="info")
+    server = uvicorn.Server(config)
+
+    # Odpalamy jednocześnie serwer FastAPI oraz bota Discorda
     await asyncio.gather(
         server.serve(),
-        bot.start("MTUxMjAwMDUxNjg2MTg1Nzk4Mg.G1RCbd.7LKKyjHe3--zMMFj82PGxLCvA6m48rJJ99HmUc") 
+        bot.start(TOKEN)
     )
 
 if __name__ == "__main__":
-    database.init_db()
-    
     asyncio.run(main())
-    
-bot.run(TOKEN)
