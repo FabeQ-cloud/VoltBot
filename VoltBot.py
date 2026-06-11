@@ -159,12 +159,11 @@ def is_premium(user_id: int) -> bool:
     return False
 
 app = FastAPI()
-
-from discord import app_commands
-
 def premium_only():
     async def predicate(interaction: discord.Interaction) -> bool:
-        if not is_premium(interaction.user.id):
+        has_premium = await asyncio.to_thread(is_premium, interaction.user.id)
+        
+        if not has_premium:
             await interaction.response.send_message(
                 "This feature requires a Volt Premium license. Activate it using `/license_redeem`.",
                 ephemeral=True
@@ -174,7 +173,6 @@ def premium_only():
         return True
 
     return app_commands.check(predicate)
-
 def ensure_user(user_id):
     cursor.execute(
         "INSERT OR IGNORE INTO economy (user_id, balance, last_daily) VALUES (?, 0, 0)",
