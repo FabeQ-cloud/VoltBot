@@ -21,6 +21,25 @@ from dotenv import load_dotenv
 import contextlib
 from fastapi import FastAPI
 
+class VoltBot(discord.Client):
+    def __init__(self):
+        intents = discord.Intents.default()
+        intents.members = True
+        intents.message_content = True
+        super().__init__(intents=intents)
+        self.tree = app_commands.CommandTree(self)
+
+    async def setup_hook(self):
+        # To jest najlepsze miejsce na synchronizację
+        synced = await self.tree.sync()
+        print(f"[✅] Zsynchronizowano {len(synced)} komend!")
+
+    async def on_ready(self):
+        print(f"[🚀] Zalogowano jako {self.user}!")
+        print(f"[🔍] Bot widzi {len(self.tree.get_commands())} komend.")
+
+bot = VoltBot()
+
 load_dotenv()
 TOKEN = os.getenv("DISCORD_TOKEN")
 TOKEN = "MTUxMjAwMDUxNjg2MTg1Nzk4Mg.G1RCbd.7LKKyjHe3--zMMFj82PGxLCvA6m48rJJ99HmUc"
@@ -183,25 +202,6 @@ def is_licensed(guild_id: int):
         return True
 
     return time.time() < expires
-
-class VoltBot(discord.Client):
-    def __init__(self):
-        intents = discord.Intents.default()
-        intents.members = True
-        intents.message_content = True
-        super().__init__(intents=intents)
-        self.tree = app_commands.CommandTree(self)
-
-    async def setup_hook(self):
-        # To jest najlepsze miejsce na synchronizację
-        synced = await self.tree.sync()
-        print(f"[✅] Zsynchronizowano {len(synced)} komend!")
-
-    async def on_ready(self):
-        print(f"[🚀] Zalogowano jako {self.user}!")
-        print(f"[🔍] Bot widzi {len(self.tree.get_commands())} komend.")
-
-bot = VoltBot()
         
 @bot.event
 async def on_message(message):
@@ -1716,3 +1716,8 @@ app = FastAPI(lifespan=lifespan)
 @app.get("/")
 async def root():
     return {"message": "Bot is healthy and running!"}
+
+print(f"[DEBUG] Sprawdzanie komend przed startem:")
+print(f"[DEBUG] Liczba komend w tree: {len(bot.tree.get_commands())}")
+for cmd in bot.tree.get_commands():
+    print(f"[DEBUG] Znaleziono komendę: {cmd.name}")
