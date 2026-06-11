@@ -9,6 +9,7 @@ app = FastAPI()
 base_dir = os.path.dirname(os.path.abspath(__file__))
 templates_dir = os.path.join(base_dir, "templates")
 templates = Jinja2Templates(directory=templates_dir)
+DB_PATH = os.path.join(base_dir, "volt.db")
 
 DB_PATH = "/home/fabian-zielenkiewicz/DiscordBot/venv/volt.db"
 bot_instance = None
@@ -38,7 +39,10 @@ async def check_profile(request: Request, user_id: str = Form(...)):
                 "SELECT balance FROM economy WHERE user_id = ?",
                 (int(user_id),)
             )
-            row = cursor.fetchone()
+            row = cursobase_dir = os.path.dirname(os.path.abspath(__file__))
+templates_dir = os.path.join(base_dir, "templates")
+templates = Jinja2Templates(directory=templates_dir)
+DB_PATH = os.path.join(base_dir, "volt.db")r.fetchone()
 
             if row:
                 coins = row[0]
