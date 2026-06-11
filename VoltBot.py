@@ -148,6 +148,38 @@ conn.commit()
 
 conn.commit()
 
+def init_subs_db():
+    conn = sqlite3.connect("volt.db")
+    cursor = conn.cursor()
+    # Tabela przechowuje ID użytkownika oraz czas (Timestamp Unix), do kiedy ważne jest Premium
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS subscriptions (
+            user_id INTEGER PRIMARY KEY,
+            premium_until INTEGER
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+# Wywołaj tę funkcję przy starcie bota:
+init_subs_db()
+
+def check_premium_db(user_id):
+    conn = sqlite3.connect("volt.db")
+    cursor = conn.cursor()
+    
+    cursor.execute("SELECT premium_until FROM subscriptions WHERE user_id = ?", (user_id,))
+    row = cursor.fetchone()
+    
+    conn.close()
+    
+    if row:
+        premium_until = row[0]
+        if premium_until > int(time.time()):
+            return True
+            
+    return False
+
 def is_premium(user_id: int) -> bool:
     # Zamieniamy ID na string, bo tak zapisujemy w bazie
     uid_str = str(user_id)
@@ -161,18 +193,50 @@ def is_premium(user_id: int) -> bool:
 app = FastAPI()
 def premium_only():
     async def predicate(interaction: discord.Interaction) -> bool:
-        has_premium = await asyncio.to_thread(is_premium, interaction.user.id)
+        user_id = interaction.user.id
+        
+        # Bezpiecznie pytamy bazę danych w osobnym wątku
+        has_premium = await asyncio.to_thread(check_premium_db, user_id)
         
         if not has_premium:
+            # Informujemy użytkownika, że ta funkcja wymaga zakupu
             await interaction.response.send_message(
-                "This feature requires a Volt Premium license. Activate it using `/license_redeem`.",
+                "❌ **This feature requires Volt Premium!**\n"
+                "Visit the link: https://voltbot-az88.onrender.com/shop to purchase a license key and support the project.",
                 ephemeral=True
             )
             return False
-            
         return True
-
     return app_commands.check(predicate)
+
+def grant_premium(user_id, days=30):
+    conn = sqlite3.connect("volt.db")
+    cursor = conn.cursor()
+    
+   
+    seconds_to_add = days * 24 * 60 * 60
+    
+   
+    cursor.execute("SELECT premium_until FROM subscriptions WHERE user_id = ?", (user_id,))
+    row = cursor.fetchone()
+    
+    now = int(time.time())
+    if row and row[0] > now:
+        
+        new_expiry = row[0] + seconds_to_add
+    else:
+       
+        new_expiry = now + seconds_to_add
+        
+    cursor.execute("""
+        INSERT OR REPLACE INTO subscriptions (user_id, premium_until)
+        VALUES (?, ?)
+    """, (user_id, new_expiry))
+    
+    conn.commit()
+    conn.close()
+    print(f"💎 Granted premium to {user_id} for {days} days (Expires at Unix: {new_expiry})")
+    
 def ensure_user(user_id):
     cursor.execute(
         "INSERT OR IGNORE INTO economy (user_id, balance, last_daily) VALUES (?, 0, 0)",
