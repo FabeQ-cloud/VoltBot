@@ -6,6 +6,10 @@ import sqlite3
 
 app = FastAPI()
 
+@app.get("/shop")
+async def prosty_sklep():
+    return {"status": "Serwer widzi ta sciezke"}
+
 # Definicje ścieżek
 base_dir = os.path.dirname(os.path.abspath(__file__))
 templates_dir = os.path.join(base_dir, "templates")
