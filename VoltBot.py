@@ -222,20 +222,13 @@ async def lifespan(app):
     await bot.close()
     
 async def on_ready(self):
-        print(f"[🚀] Zalogowano jako {self.user}!")
-        
-        
-        database.init_db()
-        
-        
-        www.bot_instance = self  
-        
-        
-        try:
-            synced = await self.tree.sync()
-            print(f"[✅] Zsynchronizowano {len(synced)} komend!")
-        except Exception as e:
-            print(f"[❌] Błąd synchronizacji: {e}")
+    print(f"[🚀] Zalogowano jako {self.user}!")
+    try:
+        # TO JEST KLUCZOWE: Synchronizacja komend
+        synced = await self.tree.sync()
+        print(f"[✅] Zsynchronizowano {len(synced)} komend!")
+    except Exception as e:
+        print(f"[❌] Błąd synchronizacji: {e}")
 
 @bot.event
 async def on_message(message):
