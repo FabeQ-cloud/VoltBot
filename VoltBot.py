@@ -192,41 +192,16 @@ class VoltBot(discord.Client):
         super().__init__(intents=intents)
         self.tree = app_commands.CommandTree(self)
 
-        app = FastAPI()
+    async def setup_hook(self):
+        # To jest najlepsze miejsce na synchronizację
+        synced = await self.tree.sync()
+        print(f"[✅] Zsynchronizowano {len(synced)} komend!")
+
+    async def on_ready(self):
+        print(f"[🚀] Zalogowano jako {self.user}!")
+        print(f"[🔍] Bot widzi {len(self.tree.get_commands())} komend.")
 
 bot = VoltBot()
-
-@contextlib.asynccontextmanager
-async def lifespan(app):
-    load_dotenv()
-    TOKEN = os.getenv("DISCORD_TOKEN")
-    
-    if not TOKEN:
-        print("[CRITICAL] TOKEN JEST PUSTY! Sprawdź Environment w Renderze!")
-    else:
-        print(f"[DEBUG] Próba logowania z tokenem: {TOKEN[:5]}...") # Wyświetli tylko początek
-        # Używamy create_task, ale z bardzo wyraźnym logowaniem
-        asyncio.create_task(bot.start(TOKEN))
-        print("[INFO] Zadanie startu bota zostało wysłane do pętli.")
-        
-    yield
-    print("[INFO] Zamykanie serwera...")
-    await bot.close()
-    
-synced = False
-
-async def on_ready(self):
-    print(f"[🚀] Zalogowano jako {self.user}!")
-    
-    # Dodaj to sprawdzenie:
-    commands = self.tree.get_commands()
-    print(f"[🔍] Bot znalazł w pamięci {len(commands)} komend: {[c.name for c in commands]}")
-    
-    global synced
-    if not synced:
-        await self.tree.sync()
-        synced = True
-        print("[✅] Globalna synchronizacja wykonana!")
         
 @bot.event
 async def on_message(message):
