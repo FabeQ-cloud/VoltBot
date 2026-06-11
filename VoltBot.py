@@ -1719,3 +1719,5 @@ print(f"[DEBUG] Sprawdzanie komend przed startem:")
 print(f"[DEBUG] Liczba komend w tree: {len(bot.tree.get_commands())}")
 for cmd in bot.tree.get_commands():
     print(f"[DEBUG] Znaleziono komendę: {cmd.name}")
+
+www.bot_instance = bot
