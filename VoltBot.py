@@ -160,21 +160,20 @@ def is_premium(user_id: int) -> bool:
 
 app = FastAPI()
 
-def premium_only():
-    def decorator(func):
-        @wraps(func)
-        async def wrapper(interaction: discord.Interaction, *args, **kwargs):
-            # SPRAWDZAMY UŻYTKOWNIKA (interaction.user.id), A NIE SERWER!
-            if not is_premium(interaction.user.id):
-                await interaction.response.send_message(
-                    "This feature requires a Volt Premium license. Activate it using `/license_redeem`.",
-                    ephemeral=True
-                )
-                return
+from discord import app_commands
 
-            return await func(interaction, *args, **kwargs)
-        return wrapper
-    return decorator
+def premium_only():
+    async def predicate(interaction: discord.Interaction) -> bool:
+        if not is_premium(interaction.user.id):
+            await interaction.response.send_message(
+                "This feature requires a Volt Premium license. Activate it using `/license_redeem`.",
+                ephemeral=True
+            )
+            return False
+            
+        return True
+
+    return app_commands.check(predicate)
 
 def ensure_user(user_id):
     cursor.execute(
