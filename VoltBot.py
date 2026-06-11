@@ -193,19 +193,34 @@ class VoltBot(discord.Client):
         intents = discord.Intents.default()
         intents.members = True
         intents.message_content = True
-
         super().__init__(intents=intents)
         self.tree = app_commands.CommandTree(self)
 
-    async def setup_hook(self):
-        synced = await self.tree.sync()
-        print(f"Synced {len(synced)} commands")
+        app = FastAPI()
+
+@app.get("/")
+async def root():
+    return {"message": "VoltBot is online!"}
 
 bot = VoltBot()
-import asyncio
-import uvicorn
 
-
+@contextlib.asynccontextmanager
+async def lifespan(app):
+    load_dotenv()
+    TOKEN = os.getenv("DISCORD_TOKEN")
+    
+    if not TOKEN:
+        print("[CRITICAL] TOKEN JEST PUSTY! Sprawdź Environment w Renderze!")
+    else:
+        print(f"[DEBUG] Próba logowania z tokenem: {TOKEN[:5]}...") # Wyświetli tylko początek
+        # Używamy create_task, ale z bardzo wyraźnym logowaniem
+        asyncio.create_task(bot.start(TOKEN))
+        print("[INFO] Zadanie startu bota zostało wysłane do pętli.")
+        
+    yield
+    print("[INFO] Zamykanie serwera...")
+    await bot.close()
+    
 @bot.event
 async def on_ready():
     database.init_db()  # <-- Inicjalizujemy bazę danych
