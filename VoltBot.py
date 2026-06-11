@@ -12,8 +12,6 @@ import random
 from typing import Optional
 import datetime
 from functools import wraps
-from www import app # type: ignore
-import www # type: ignore
 import database # type: ignore
 import secrets
 import os
