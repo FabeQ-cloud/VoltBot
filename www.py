@@ -1,6 +1,6 @@
 from fastapi import FastAPI, Request, Form
-from fastapi.responses import HTMLResponse, RedirectResponse  
-from fastapi.templating import Jinja2Templates                
+from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.templating import Jinja2Templates
 import os
 import sqlite3
 
@@ -14,11 +14,23 @@ DB_PATH = os.path.join(base_dir, "volt.db")
 
 bot_instance = None
 
+# 1. Automatyczne przekierowanie z adresu głównego do sklepu
 @app.get("/")
 async def root():
     return RedirectResponse(url="/shop")
 
-@app.post("/", response_class=HTMLResponse)
+# 2. Wyświetlanie sklepu pod adresem /shop
+@app.get("/shop", response_class=HTMLResponse)
+async def read_shop(request: Request):
+    guild_count = len(bot_instance.guilds) if bot_instance else 0
+    return templates.TemplateResponse(
+        request=request,
+        name="index.html", 
+        context={"request": request, "guild_count": guild_count, "user_data": None}
+    )
+
+# 3. Obsługa formularza (szukanie profilu) pod adresem /shop
+@app.post("/shop", response_class=HTMLResponse)
 async def check_profile(request: Request, user_id: str = Form(...)):
     guild_count = len(bot_instance.guilds) if bot_instance else 0
     
@@ -26,7 +38,6 @@ async def check_profile(request: Request, user_id: str = Form(...)):
     coins = 0
     is_premium = False
 
-    # Próba pobrania nazwy z bota
     if bot_instance:
         try:
             user = await bot_instance.fetch_user(int(user_id))
@@ -35,7 +46,6 @@ async def check_profile(request: Request, user_id: str = Form(...)):
         except Exception:
             pass
 
-    # Logika bazy danych
     if os.path.exists(DB_PATH):
         try:
             conn = sqlite3.connect(DB_PATH)
@@ -44,16 +54,10 @@ async def check_profile(request: Request, user_id: str = Form(...)):
             row = cursor.fetchone()
             if row:
                 coins = row[0]
-                print(f"[SUKCES] Znaleziono użytkownika! Monety: {coins}")
-            else:
-                print(f"[INFO] Brak użytkownika o ID {user_id} w tabeli economy.")
             conn.close()
         except Exception as e:
             print(f"Błąd bazy danych: {e}")
-    else:
-        print(f"Nie znaleziono pliku bazy danych pod ścieżką: {DB_PATH}")
 
-    # Sprawdzenie premium
     if user_id == "1490030330084720892": 
         is_premium = True
 
