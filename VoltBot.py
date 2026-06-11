@@ -1680,8 +1680,6 @@ async def license_check(interaction: discord.Interaction):
             ephemeral=True
         )
 
-bot = VoltBot()
-
 @contextlib.asynccontextmanager
 async def lifespan(app):
     load_dotenv()
