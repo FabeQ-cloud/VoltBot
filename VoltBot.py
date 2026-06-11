@@ -571,15 +571,13 @@ async def check_punishment(member: discord.Member, warn_count: int):
     return "Banned for 24h"
 
 @bot.tree.command(name="ticket", description="Open ticket panel")
-@premium_only()
+# @premium_only()  <-- ZAKOMENTUJ TO NA CHWILĘ kratką #
 async def ticket(interaction: discord.Interaction):
-
     embed = discord.Embed(
         title="Support Tickets",
         description="Click a button below to open a ticket.",
         color=0x00ffcc
     )
-
     await interaction.response.send_message(
         embed=embed,
         view=TicketView(), 
