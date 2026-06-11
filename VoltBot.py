@@ -216,6 +216,12 @@ async def lifespan(app):
 synced = False
 
 async def on_ready(self):
+    print(f"[🚀] Zalogowano jako {self.user}!")
+    
+    # Dodaj to sprawdzenie:
+    commands = self.tree.get_commands()
+    print(f"[🔍] Bot znalazł w pamięci {len(commands)} komend: {[c.name for c in commands]}")
+    
     global synced
     if not synced:
         await self.tree.sync()
