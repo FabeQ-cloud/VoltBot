@@ -1680,40 +1680,14 @@ async def license_check(interaction: discord.Interaction):
             ephemeral=True
         )
 
-@contextlib.asynccontextmanager
-async def lifespan(app):
-    load_dotenv()
-    TOKEN = os.getenv("DISCORD_TOKEN")
-    
-    if not TOKEN:
-        print("[❌] Brak DISCORD_TOKEN!")
-    else:
-        
-        print("[🤖] Inicjalizacja bota...")
-        
-        loop = asyncio.get_event_loop()
-        bot_task = loop.create_task(bot.start(TOKEN))
-        
-        await asyncio.sleep(5) 
-        print("[✅] Bot powinien być już online.")
-        
-    yield 
-    
-
-    await bot.close()
-
 def main():
     port = int(os.getenv("PORT", 8000))
-    uvicorn.run("VoltBot:app", host="0.0.0.0", port=port, log_level="info")
+    uvicorn.run("www:app", host="0.0.0.0", port=port, log_level="info")
 
 if __name__ == "__main__":
     main()
-
-app = FastAPI(lifespan=lifespan)
-
+    
 print(f"[DEBUG] Sprawdzanie komend przed startem:")
 print(f"[DEBUG] Liczba komend w tree: {len(bot.tree.get_commands())}")
 for cmd in bot.tree.get_commands():
     print(f"[DEBUG] Znaleziono komendę: {cmd.name}")
-
-www.bot_instance = bot
