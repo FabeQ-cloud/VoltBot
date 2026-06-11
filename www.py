@@ -11,7 +11,6 @@ templates_dir = os.path.join(base_dir, "templates")
 templates = Jinja2Templates(directory=templates_dir)
 DB_PATH = os.path.join(base_dir, "volt.db")
 
-DB_PATH = "/home/fabian-zielenkiewicz/DiscordBot/venv/volt.db"
 bot_instance = None
 
 @app.post("/", response_class=HTMLResponse)
