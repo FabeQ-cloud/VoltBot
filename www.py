@@ -14,7 +14,7 @@ DB_PATH = os.path.join(base_dir, "volt.db")
 
 bot_instance = None
 
-@app.get("/", response_class=HTMLResponse)
+@app.get("/shop", response_class=HTMLResponse)
 async def read_root(request: Request):
     guild_count = len(bot_instance.guilds) if bot_instance else 0
     return templates.TemplateResponse(
