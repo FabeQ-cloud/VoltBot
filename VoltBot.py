@@ -194,10 +194,6 @@ class VoltBot(discord.Client):
 
         app = FastAPI()
 
-@app.get("/")
-async def root():
-    return {"message": "VoltBot is online!"}
-
 bot = VoltBot()
 
 @contextlib.asynccontextmanager
@@ -217,15 +213,15 @@ async def lifespan(app):
     print("[INFO] Zamykanie serwera...")
     await bot.close()
     
-async def on_ready(self):
-    print(f"[🚀] Zalogowano jako {self.user}!")
-    try:
-        # TO JEST KLUCZOWE: Synchronizacja komend
-        synced = await self.tree.sync()
-        print(f"[✅] Zsynchronizowano {len(synced)} komend!")
-    except Exception as e:
-        print(f"[❌] Błąd synchronizacji: {e}")
+synced = False
 
+async def on_ready(self):
+    global synced
+    if not synced:
+        await self.tree.sync()
+        synced = True
+        print("[✅] Globalna synchronizacja wykonana!")
+        
 @bot.event
 async def on_message(message):
 
