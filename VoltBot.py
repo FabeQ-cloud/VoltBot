@@ -905,41 +905,34 @@ async def balance(interaction: discord.Interaction):
     await interaction.response.send_message(embed=embed)
 
 
-@bot.tree.command(name="daily", description="Claim your daily reward")
-@premium_only()
-async def daily(interaction: discord.Interaction):
-
-    await interaction.response.defer()
-
-    user_id = interaction.user.id
-
+# Pomocnicza funkcja do operacji na bazie - uruchamiana w osobnym wątku
+def process_daily_db(user_id):
+    # Otwieramy nowe, bezpieczne połączenie dla tego wątku
+    conn = sqlite3.connect("volt.db")
+    cursor = conn.cursor()
+    
     cursor.execute(
         "SELECT balance, last_daily, streak FROM economy WHERE user_id = ?",
         (user_id,)
     )
-
     row = cursor.fetchone()
 
     now = int(time.time())
     cooldown = 86400
-
     base_reward = 1000
 
     if row:
         balance, last_daily, streak = row
 
+        # 1. Sprawdzenie cooldownu
         if last_daily and now - last_daily < cooldown:
-
             remaining = cooldown - (now - last_daily)
             hours = remaining // 3600
             minutes = (remaining % 3600) // 60
+            conn.close()
+            return {"status": "cooldown", "hours": hours, "minutes": minutes}
 
-            await interaction.followup.send(
-                f"You already claimed daily!\nTry again in **{hours}h {minutes}m**",
-                ephemeral=True
-            )
-            return
-
+        # 2. Sprawdzenie czy streak został utrzymany (w ciągu 48 godzin)
         if last_daily and now - last_daily <= cooldown * 2:
             streak += 1
         else:
@@ -956,8 +949,8 @@ async def daily(interaction: discord.Interaction):
             """,
             (new_balance, now, streak, user_id)
         )
-
     else:
+        # Nowy użytkownik w ekonomii
         streak = 1
         reward = base_reward
         new_balance = reward
@@ -971,21 +964,47 @@ async def daily(interaction: discord.Interaction):
         )
 
     conn.commit()
+    conn.close()
+    
+    return {
+        "status": "success",
+        "reward": reward,
+        "streak": streak,
+        "new_balance": new_balance
+    }
 
+@bot.tree.command(name="daily", description="Claim your daily reward")
+@premium_only()
+async def daily(interaction: discord.Interaction):
+    await interaction.response.defer()
+
+    user_id = interaction.user.id
+    
+    result = await asyncio.to_thread(process_daily_db, user_id)
+
+    
+    if result["status"] == "cooldown":
+        await interaction.followup.send(
+            f"You already claimed daily!\nTry again in **{result['hours']}h {result['minutes']}m**",
+            ephemeral=True
+        )
+        return
+
+    
     embed = discord.Embed(
         title="Daily Reward",
-        description=f"+{reward} coins\nStreak: {streak}",
+        description=f"+{result['reward']} coins\nStreak: {result['streak']} 🔥",
         color=discord.Color.green()
     )
 
     embed.add_field(
         name="Balance",
-        value=f"{new_balance:,} coins",
+        value=f"{result['new_balance']:,} coins",
         inline=False
     )
 
     await interaction.followup.send(embed=embed)
-
+    
 @bot.tree.command(name="work", description="Earn coins by working")
 @premium_only()
 async def work(interaction: discord.Interaction):
