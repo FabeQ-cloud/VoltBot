@@ -1,6 +1,6 @@
 from fastapi import FastAPI, Request, Form
 from fastapi.responses import HTMLResponse
-from fastapi.templating import Jinja2Templates
+from fastapi.templating import Jinja2Templates, RedirectResponse
 import os
 import sqlite3
 
@@ -14,14 +14,9 @@ DB_PATH = os.path.join(base_dir, "volt.db")
 
 bot_instance = None
 
-@app.get("/shop", response_class=HTMLResponse)
-async def read_root(request: Request):
-    guild_count = len(bot_instance.guilds) if bot_instance else 0
-    return templates.TemplateResponse(
-        request=request,
-        name="index.html", 
-        context={"request": request, "guild_count": guild_count, "user_data": None}
-    )
+@app.get("/")
+async def root():
+    return RedirectResponse(url="/shop")
 
 @app.post("/", response_class=HTMLResponse)
 async def check_profile(request: Request, user_id: str = Form(...)):
