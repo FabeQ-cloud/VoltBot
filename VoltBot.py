@@ -143,10 +143,6 @@ def is_premium(user_id: int) -> bool:
 
 app = FastAPI()
 
-@app.get("/")
-async def root():
-    return {"message": "VoltBot is online and healthy!"}
-
 def premium_only():
     def decorator(func):
         @wraps(func)
@@ -1739,3 +1735,7 @@ if __name__ == "__main__":
     main()
 
 app = FastAPI(lifespan=lifespan)
+
+@app.get("/")
+async def root():
+    return {"message": "Bot is healthy and running!"}
