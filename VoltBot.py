@@ -168,29 +168,38 @@ def check_premium_db(user_id):
     conn = sqlite3.connect("volt.db")
     cursor = conn.cursor()
     
-    cursor.execute("SELECT premium_until FROM subscriptions WHERE user_id = ?", (user_id,))
+    # Wymuszamy int() na user_id na wypadek, gdyby w bazie był zapisany jako tekst
+    cursor.execute("SELECT premium_until FROM subscriptions WHERE user_id = ?", (int(user_id),))
     row = cursor.fetchone()
     
     conn.close()
     
-    if row:
-        premium_until = row[0]
-        if premium_until > int(time.time()):
-            return True
+    if row and row[0] is not None:
+        try:
+            premium_until = int(row[0]) # Konwertujemy wynik z bazy na int
+            current_time = int(time.time())
+            
+            
+            print(f"DEBUG PREMIUM: User {user_id} has premium until {premium_until}. Current time: {current_time}")
+            
+            if premium_until > current_time:
+                return True
+        except ValueError:
+            print(f"❌ DEBUG PREMIUM: Błąd konwersji timestampu dla użytkownika {user_id}")
+            return False
             
     return False
-
 def is_premium(user_id: int) -> bool:
     # Zamieniamy ID na string, bo tak zapisujemy w bazie
     uid_str = str(user_id)
     expiration = database.check_user_license(uid_str)
     
-    # Jeśli funkcja zwróciła datę (czyli subskrypcja istnieje), zwracamy True
     if expiration:
         return True
     return False
 
 app = FastAPI()
+
 def premium_only():
     async def predicate(interaction: discord.Interaction) -> bool:
         user_id = interaction.user.id
