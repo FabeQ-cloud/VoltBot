@@ -221,15 +221,21 @@ async def lifespan(app):
     print("[INFO] Zamykanie serwera...")
     await bot.close()
     
-@bot.event
-async def on_ready():
-    database.init_db()  # <-- Inicjalizujemy bazę danych
-    www.bot_instance = bot
-
-@bot.event
-async def on_ready():
-    www.bot_instance = bot  # <-- Add this line here
-    print(f"VoltBot is online as {bot.user.name}")
+async def on_ready(self):
+        print(f"[🚀] Zalogowano jako {self.user}!")
+        
+        
+        database.init_db()
+        
+        
+        www.bot_instance = self  
+        
+        
+        try:
+            synced = await self.tree.sync()
+            print(f"[✅] Zsynchronizowano {len(synced)} komend!")
+        except Exception as e:
+            print(f"[❌] Błąd synchronizacji: {e}")
 
 @bot.event
 async def on_message(message):
