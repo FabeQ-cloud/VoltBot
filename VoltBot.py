@@ -18,6 +18,8 @@ import database # type: ignore
 import secrets
 import os
 from dotenv import load_dotenv
+import contextlib
+from fastapi import FastAPI
 
 load_dotenv()
 TOKEN = os.getenv("DISCORD_TOKEN")
@@ -138,6 +140,12 @@ def is_premium(user_id: int) -> bool:
     if expiration:
         return True
     return False
+
+app = FastAPI()
+
+@app.get("/")
+async def root():
+    return {"message": "VoltBot is online and healthy!"}
 
 def premium_only():
     def decorator(func):
@@ -1685,31 +1693,33 @@ async def license_check(interaction: discord.Interaction):
             ephemeral=True
         )
 
-async def main():
-    import os
-    import uvicorn
-    from dotenv import load_dotenv
+bot = VoltBot()
 
+@contextlib.asynccontextmanager
+async def lifespan(app):
     load_dotenv()
     TOKEN = os.getenv("DISCORD_TOKEN")
-
-    if not TOKEN or TOKEN == "None":
-        print("\n[❌ BŁĄD] Python nie znalazł tokenu w pliku .env!")
-        print("[💡 PORADA] Upewnij się, że plik nazywa się dokładnie '.env' (z kropką na początku)")
-        print("[💡 PORADA] oraz że w środku masz linijkę: DISCORD_TOKEN=twój_nowy_token\n")
-        # Jeśli testujesz LOKALNIE i plik .env nie działa, wklej tymczasowo nowy token poniżej:
-        TOKEN = "TUTAJ_MOŻESZ_WKLEIĆ_NOWY_TOKEN_TYLKO_DO_TESTU_LOKALNEGO"
-
-    print(f"[🤖 INFO] Próba uruchomienia bota... Długość tokenu: {len(str(TOKEN)) if TOKEN else 0}")
     
-    config = uvicorn.Config("VoltBot:app", host="0.0.0.0", port=8000, log_level="info")
-    server = uvicorn.Server(config)
+    if not TOKEN:
+        print("[❌] Brak DISCORD_TOKEN!")
+    else:
+        
+        print("[🤖] Inicjalizacja bota...")
+        
+        loop = asyncio.get_event_loop()
+        bot_task = loop.create_task(bot.start(TOKEN))
+        
+        await asyncio.sleep(5) 
+        print("[✅] Bot powinien być już online.")
+        
+    yield 
+    
 
-    # Odpalamy jednocześnie serwer FastAPI oraz bota Discorda
-    await asyncio.gather(
-        server.serve(),
-        bot.start(TOKEN)
-    )
+    await bot.close()
+
+def main():
+    port = int(os.getenv("PORT", 8000))
+    uvicorn.run("VoltBot:app", host="0.0.0.0", port=port, log_level="info")
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
