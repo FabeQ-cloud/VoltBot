@@ -1711,10 +1711,6 @@ if __name__ == "__main__":
 
 app = FastAPI(lifespan=lifespan)
 
-@app.get("/")
-async def root():
-    return {"message": "Bot is healthy and running!"}
-
 print(f"[DEBUG] Sprawdzanie komend przed startem:")
 print(f"[DEBUG] Liczba komend w tree: {len(bot.tree.get_commands())}")
 for cmd in bot.tree.get_commands():
