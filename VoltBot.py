@@ -195,6 +195,41 @@ def init_subs_db():
 init_subs_db()
 
 def check_premium_db(user_id):
+
+    PREMIUM_USERS = [1490030330084720892]
+
+    if int(user_id) in PREMIUM_USERS:
+        return True
+
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    db_path = os.path.join(base_dir, "volt.db")
+
+    if not os.path.exists(db_path):
+        return False
+
+    conn = sqlite3.connect(db_path, timeout=10)
+    cursor = conn.cursor()
+    current_time = int(time.time())
+
+    try:
+        # Dokładnie to zapytanie, które u Ciebie działa w systemie licencji
+        cursor.execute(
+            "SELECT expires_at FROM licenses WHERE used_by_user_id = ? AND is_used = 1",
+            (str(user_id),),
+        )
+        row = cursor.fetchone()
+
+        if row and row[0] is not None:
+            if int(row[0]) > current_time:
+                conn.close()
+                return True
+    except Exception as e:
+        print(f"❌ [DB ERROR] check_premium_db error: {e}")
+
+    conn.close()
+    return False
+
+def check_premium_db(user_id):
     base_dir = os.path.dirname(os.path.abspath(__file__))
     db_path = os.path.join(base_dir, "volt.db")
 
