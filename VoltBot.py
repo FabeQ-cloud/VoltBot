@@ -1946,3 +1946,35 @@ async def debug_premium(interaction: discord.Interaction):
         report = report[:1950] + "\n... (obcięto zbyt długi raport)"
 
     await interaction.followup.send(report, ephemeral=True)
+
+@bot.tree.command(name="dump_licenses", description="DEVELOPER ONLY: See raw data inside licenses table")
+async def dump_licenses(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
+    
+    conn = sqlite3.connect("volt.db")
+    cursor = conn.cursor()
+    
+    try:
+        # Pobieramy nazwy kolumn w tabeli licenses
+        cursor.execute("PRAGMA table_info(licenses)")
+        columns = [f"{col[1]} ({col[2]})" for col in cursor.fetchall()]
+        col_text = ", ".join(columns)
+        
+        # Pobieramy 5 ostatnich rekordów
+        cursor.execute("SELECT * FROM licenses LIMIT 5")
+        rows = cursor.fetchall()
+        
+        report = f"📋 **Struktura tabeli `licenses` (Kolumny):**\n`[{col_text}]`\n\n"
+        report += "📊 **Ostatnie wpisy w tej tabeli:**\n"
+        
+        if rows:
+            for row in rows:
+                report += f"🔹 `{row}`\n"
+        else:
+            report += "🔸 Tabela `licenses` jest całkowicie pusta!\n"
+            
+    except Exception as e:
+        report = f"Błąd podczas sprawdzania tabeli `licenses`: {str(e)}"
+        
+    conn.close()
+    await interaction.followup.send(report, ephemeral=True)
