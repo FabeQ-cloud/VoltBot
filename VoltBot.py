@@ -1834,54 +1834,65 @@ async def license_redeem(interaction: discord.Interaction, key: str):
     user_id = str(interaction.user.id)
     clean_key = key.strip()
 
-    conn = sqlite3.connect("volt.db")
+    # 🌟 GWARANCJA TRWAŁOŚCI: Bezpieczna, absolutna ścieżka do bazy
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    db_path = os.path.join(base_dir, "volt.db")
+
+    conn = sqlite3.connect(db_path, timeout=10)
     cursor = conn.cursor()
 
-    # 1. Sprawdzamy czy klucz istnieje i czy nie został użyty
-    cursor.execute(
-        "SELECT id, duration_days, is_used FROM licenses WHERE license_key = ?",
-        (clean_key,),
-    )
-    row = cursor.fetchone()
-
-    if not row:
-        conn.close()
-        await interaction.followup.send(
-            "❌ This license key does not exist.", ephemeral=True
+    try:
+        # 1. Sprawdzamy czy klucz istnieje
+        cursor.execute(
+            "SELECT id, duration_days, is_used FROM licenses WHERE license_key = ?",
+            (clean_key,),
         )
-        return
+        row = cursor.fetchone()
 
-    db_id, duration_days, is_used = row
+        if not row:
+            conn.close()
+            await interaction.followup.send(
+                "❌ This license key does not exist.", ephemeral=True
+            )
+            return
 
-    if is_used == 1:
-        conn.close()
-        await interaction.followup.send(
-            "This license key has already been used.", ephemeral=True
+        db_id, duration_days, is_used = row
+
+        if is_used == 1:
+            conn.close()
+            await interaction.followup.send(
+                "❌ This license key has already been used.", ephemeral=True
+            )
+            return
+
+        # 2. Obliczamy czas wygaśnięcia
+        seconds_to_add = int(duration_days) * 24 * 60 * 60
+        expiry_timestamp = int(time.time()) + seconds_to_add
+
+        # 3. Zapisujemy przypisanie licencji do Twojego ID
+        cursor.execute(
+            """
+            UPDATE licenses 
+            SET is_used = 1, used_by_user_id = ?, expires_at = ? 
+            WHERE id = ?
+        """,
+            (user_id, str(expiry_timestamp), db_id),
         )
-        return
 
-    # 2. Obliczamy czas wygaśnięcia
-    seconds_to_add = int(duration_days) * 24 * 60 * 60
-    expiry_timestamp = int(time.time()) + seconds_to_add
+        conn.commit()
+        await interaction.followup.send(
+            "✅ License activated successfully! Thank you for your purchase.",
+            ephemeral=True,
+        )
 
-    # 3. Aktualizujemy licencję w bazie – przypisujemy ją do Ciebie
-    cursor.execute(
-        """
-        UPDATE licenses 
-        SET is_used = 1, used_by_user_id = ?, expires_at = ? 
-        WHERE id = ?
-    """,
-        (user_id, str(expiry_timestamp), db_id),
-    )
+    except Exception as e:
+        print(f"❌ [LICENSE ERROR] Something went wrong: {e}")
+        await interaction.followup.send(
+            f"❌ Database error during activation: `{e}`", ephemeral=True
+        )
 
-    conn.commit()
-    conn.close()
-
-    await interaction.followup.send(
-        "License activated successfully! Thank you for your purchase.",
-        ephemeral=True,
-    )
-
+    finally:
+        conn.close()
 @bot.tree.command(name="license_check", description="Check your subscription status")
 async def license_check(interaction: discord.Interaction):
     user_id = str(interaction.user.id)
