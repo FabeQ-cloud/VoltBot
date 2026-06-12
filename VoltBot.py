@@ -206,42 +206,23 @@ def check_premium_db(user_id):
     current_time = int(time.time())
 
     try:
+        # Szukamy w tabeli 'licenses' po kolumnie 'used_by_user_id'
         cursor.execute(
-            "SELECT premium_until FROM subscriptions WHERE user_id = ? OR user_id = ?",
-            (int(user_id), str(user_id)),
+            "SELECT expires_at FROM licenses WHERE used_by_user_id = ? AND is_used = 1",
+            (str(user_id),),
         )
         row = cursor.fetchone()
-        if row and row[0] is not None and int(row[0]) > current_time:
-            conn.close()
-            return True
-    except sqlite3.OperationalError:
-        pass 
 
-    try:
-        cursor.execute(
-            "SELECT expires_at FROM licenses WHERE user_id = ? OR user_id = ?",
-            (int(user_id), str(user_id)),
-        )
-        row = cursor.fetchone()
-        if row and row[0] is not None and int(row[0]) > current_time:
-            conn.close()
-            return True
-    except sqlite3.OperationalError:
-        try:
-            cursor.execute(
-                "SELECT premium_until FROM licenses WHERE user_id = ? OR user_id = ?",
-                (int(user_id), str(user_id)),
-            )
-            row = cursor.fetchone()
-            if row and row[0] is not None and int(row[0]) > current_time:
+        if row and row[0] is not None:
+            # Ponieważ expires_at jest jako TEXT, bezpiecznie konwertujemy na int
+            if int(row[0]) > current_time:
                 conn.close()
                 return True
-        except sqlite3.OperationalError:
-            pass
+    except Exception as e:
+        print(f"❌ [DB ERROR] check_premium_db error: {e}")
 
     conn.close()
     return False
-
 def redeem_key_logic(user_id, input_key):
     base_dir = os.path.dirname(os.path.abspath(__file__))
     db_path = os.path.join(base_dir, "volt.db")
@@ -1832,15 +1813,58 @@ async def license_generate(interaction: discord.Interaction, days: int):
 @bot.tree.command(name="license_redeem", description="Activate your subscription key")
 @app_commands.describe(key="Your license key (VOLT-XXXX-XXXX-XXXX)")
 async def license_redeem(interaction: discord.Interaction, key: str):
+    await interaction.response.defer(ephemeral=True)
+
     user_id = str(interaction.user.id)
-    status = database.redeem_license_key(key.strip(), user_id)
-    
-    if status == "invalid":
-        await interaction.response.send_message("This license key does not exist.", ephemeral=True)
-    elif status == "used":
-        await interaction.response.send_message("This license key has already been used.", ephemeral=True)
-    elif status == "success":
-        await interaction.response.send_message("License activated successfully! Thank you for your purchase.", ephemeral=True)
+    clean_key = key.strip()
+
+    conn = sqlite3.connect("volt.db")
+    cursor = conn.cursor()
+
+    # 1. Sprawdzamy czy klucz istnieje i czy nie został użyty
+    cursor.execute(
+        "SELECT id, duration_days, is_used FROM licenses WHERE license_key = ?",
+        (clean_key,),
+    )
+    row = cursor.fetchone()
+
+    if not row:
+        conn.close()
+        await interaction.followup.send(
+            "❌ This license key does not exist.", ephemeral=True
+        )
+        return
+
+    db_id, duration_days, is_used = row
+
+    if is_used == 1:
+        conn.close()
+        await interaction.followup.send(
+            "This license key has already been used.", ephemeral=True
+        )
+        return
+
+    # 2. Obliczamy czas wygaśnięcia
+    seconds_to_add = int(duration_days) * 24 * 60 * 60
+    expiry_timestamp = int(time.time()) + seconds_to_add
+
+    # 3. Aktualizujemy licencję w bazie – przypisujemy ją do Ciebie
+    cursor.execute(
+        """
+        UPDATE licenses 
+        SET is_used = 1, used_by_user_id = ?, expires_at = ? 
+        WHERE id = ?
+    """,
+        (user_id, str(expiry_timestamp), db_id),
+    )
+
+    conn.commit()
+    conn.close()
+
+    await interaction.followup.send(
+        "License activated successfully! Thank you for your purchase.",
+        ephemeral=True,
+    )
 
 @bot.tree.command(name="license_check", description="Check your subscription status")
 async def license_check(interaction: discord.Interaction):
@@ -1978,3 +2002,17 @@ async def dump_licenses(interaction: discord.Interaction):
         
     conn.close()
     await interaction.followup.send(report, ephemeral=True)
+
+def db_add_test_key(key_code, days=30):
+    conn = sqlite3.connect("volt.db")
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        INSERT INTO licenses (license_key, duration_days, is_used, used_by_user_id, expires_at)
+        VALUES (?, ?, 0, NULL, NULL)
+    """,
+        (key_code, days),
+    )
+    conn.commit()
+    conn.close()
+    print(f"🔑 Dodano klucz testowy: {key_code}")
