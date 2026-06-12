@@ -1145,28 +1145,26 @@ async def daily(interaction: discord.Interaction):
     await interaction.response.defer()
 
     user_id = interaction.user.id
-    
-    result = await asyncio.to_thread(process_daily_db, user_id)
 
-    
+    custom_reward = 100
+
+    result = await asyncio.to_thread(process_daily_db, user_id, custom_reward)
+
     if result["status"] == "cooldown":
         await interaction.followup.send(
             f"You already claimed daily!\nTry again in **{result['hours']}h {result['minutes']}m**",
-            ephemeral=True
+            ephemeral=True,
         )
         return
 
-    
     embed = discord.Embed(
         title="Daily Reward",
         description=f"+{result['reward']} coins\nStreak: {result['streak']} 🔥",
-        color=discord.Color.green()
+        color=discord.Color.green(),
     )
 
     embed.add_field(
-        name="Balance",
-        value=f"{result['new_balance']:,} coins",
-        inline=False
+        name="Balance", value=f"{result['new_balance']:,} coins", inline=False
     )
 
     await interaction.followup.send(embed=embed)
