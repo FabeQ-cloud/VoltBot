@@ -1048,17 +1048,27 @@ async def balance(interaction: discord.Interaction):
 
     await interaction.response.send_message(embed=embed)
 
+@bot.tree.command(name="daily", description="Claim your daily reward")
+@premium_only()
+async def daily(interaction: discord.Interaction):
+    # Informujemy Discord, że bot przetwarza dane (zapobiega to zacięciu bota)
+    await interaction.response.defer()
 
-# Pomocnicza funkcja do operacji na bazie - uruchamiana w osobnym wątku
-def process_daily_db(user_id):
-    # Wymuszamy absolutną ścieżkę, żeby baza nie znikała po restarcie bota
+    user_id = interaction.user.id
+
+    # 💰 TUTAJ DEFINIUJESZ ILOŚĆ MONET DLA UŻYTKOWNIKA
+    custom_reward = 100
+
+    # Definiujemy ścieżkę do bazy
     base_dir = os.path.dirname(os.path.abspath(__file__))
     db_path = os.path.join(base_dir, "volt.db")
 
+    # Otwieramy połączenie z timeoutem, żeby wątki na siebie nie czekały
     conn = sqlite3.connect(db_path, timeout=10)
     cursor = conn.cursor()
 
     try:
+        # Szukamy użytkownika w bazie (sprawdzamy tekst i liczbę dla pewności)
         cursor.execute(
             "SELECT balance, last_daily, streak FROM economy WHERE user_id = ? OR user_id = ?",
             (int(user_id), str(user_id)),
@@ -1066,108 +1076,84 @@ def process_daily_db(user_id):
         row = cursor.fetchone()
 
         now = int(time.time())
-        cooldown = 86400
-
-        # 💰 TUTAJ USTASZ OKREŚLONĄ ILOŚĆ MONET (np. 5000 monet na start)
-        base_reward = 5000
+        cooldown = 86400  # 24 godziny w sekundach
 
         if row:
             balance, last_daily, streak = row
 
-            # 1. Cooldown check
+            # 1. Sprawdzenie czasu (Cooldown)
             if last_daily and now - last_daily < cooldown:
                 remaining = cooldown - (now - last_daily)
                 hours = remaining // 3600
                 minutes = (remaining % 3600) // 60
-                conn.close()
-                return {
-                    "status": "cooldown",
-                    "hours": hours,
-                    "minutes": minutes,
-                }
 
-            # 2. Streak check
+                conn.close()  # Zamykamy połączenie przed wyjściem!
+                await interaction.followup.send(
+                    f"You already claimed daily!\nTry again in **{hours}h {minutes}m**",
+                    ephemeral=True,
+                )
+                return
+
+            # 2. Sprawdzenie streaku (czy minęło mniej niż 48h od ostatniego odebrania)
             if last_daily and now - last_daily <= cooldown * 2:
                 streak += 1
             else:
                 streak = 1
 
-            # Możesz zostawić bonus za streak (+streak * 50) albo go usunąć
-            reward = base_reward + (streak * 50)
+            reward = custom_reward
             new_balance = balance + reward
 
+            # Aktualizacja danych w bazie
             cursor.execute(
                 """
                 UPDATE economy
                 SET balance = ?, last_daily = ?, streak = ?
                 WHERE user_id = ? OR user_id = ?
-                """,
+            """,
                 (new_balance, now, streak, int(user_id), str(user_id)),
             )
+
         else:
-            # New user in the economy system
+            # Nowy użytkownik w systemie ekonomii bota
             streak = 1
-            reward = base_reward
+            reward = custom_reward
             new_balance = reward
 
+            # Dodanie nowego wpisu
             cursor.execute(
                 """
                 INSERT INTO economy (user_id, balance, last_daily, streak)
                 VALUES (?, ?, ?, ?)
-                """,
+            """,
                 (int(user_id), new_balance, now, streak),
             )
 
+        # Zatwierdzamy zmiany w bazie danych
         conn.commit()
 
-    except Exception as e:
-        print(f"❌ [ECONOMY ERROR] Database error occurred: {e}")
-        conn.close()
-        return {
-            "status": "success",
-            "reward": 0,
-            "streak": 1,
-            "new_balance": 0,
-        }
+        # Wysyłamy piękny embed z nagrodą do użytkownika
+        embed = discord.Embed(
+            title="Daily Reward",
+            description=f"+{reward} coins\nStreak: {streak} 🔥",
+            color=discord.Color.green(),
+        )
+        embed.add_field(
+            name="Balance", value=f"{new_balance:,} coins", inline=False
+        )
 
-    conn.close()
+        await interaction.followup.send(embed=embed)
 
-    return {
-        "status": "success",
-        "reward": reward,
-        "streak": streak,
-        "new_balance": new_balance,
-    }
-    
-@bot.tree.command(name="daily", description="Claim your daily reward")
-@premium_only()
-async def daily(interaction: discord.Interaction):
-    await interaction.response.defer()
-
-    user_id = interaction.user.id
-
-    custom_reward = 100
-
-    result = await asyncio.to_thread(process_daily_db, user_id, custom_reward)
-
-    if result["status"] == "cooldown":
+    except Exception as error:
+        # JEŚLI COŚ SIĘ WYWALI W BAZIE, BOT NIE BĘDZIE WISIAŁ, TYLKO WYPLUJE BŁĄD!
+        print(f"🔴 [CRITICAL ERROR IN /DAILY]: {error}")
         await interaction.followup.send(
-            f"You already claimed daily!\nTry again in **{result['hours']}h {result['minutes']}m**",
+            f"❌ An error occurred while executing the command: `{error}`",
             ephemeral=True,
         )
-        return
 
-    embed = discord.Embed(
-        title="Daily Reward",
-        description=f"+{result['reward']} coins\nStreak: {result['streak']} 🔥",
-        color=discord.Color.green(),
-    )
-
-    embed.add_field(
-        name="Balance", value=f"{result['new_balance']:,} coins", inline=False
-    )
-
-    await interaction.followup.send(embed=embed)
+    finally:
+        # Ten blok wykona się ZAWSZE, gwarantując zamknięcie bazy danych
+        conn.close()
     
 @bot.tree.command(name="work", description="Earn coins by working")
 @premium_only()
