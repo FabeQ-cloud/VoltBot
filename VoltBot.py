@@ -148,6 +148,36 @@ conn.commit()
 
 conn.commit()
 
+def init_db():
+    # Wymuszamy absolutną ścieżkę, żeby bot zawsze widział ten sam plik
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    db_path = os.path.join(base_dir, "volt.db")
+    
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    
+    # Tabela 1: Aktywne subskrypcje użytkowników
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS subscriptions (
+            user_id INTEGER PRIMARY KEY,
+            premium_until INTEGER
+        )
+    """)
+    
+    # Tabela 2: Wygenerowane klucze czekające na użycie
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS license_keys (
+            key_code TEXT PRIMARY KEY,
+            days INTEGER
+        )
+    """)
+    
+    conn.commit()
+    conn.close()
+
+# Uruchamiamy tworzenie tabel
+init_db()
+
 def init_subs_db():
     conn = sqlite3.connect("volt.db")
     cursor = conn.cursor()
@@ -165,15 +195,11 @@ def init_subs_db():
 init_subs_db()
 
 def check_premium_db(user_id):
-    conn = sqlite3.connect("volt.db")
-    cursor = conn.cursor()
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    db_path = os.path.join(base_dir, "volt.db")
     
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS subscriptions (
-            user_id INTEGER PRIMARY KEY,
-            premium_until INTEGER
-        )
-    """)
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
     
     cursor.execute("SELECT premium_until FROM subscriptions WHERE user_id = ?", (int(user_id),))
     row = cursor.fetchone()
@@ -182,8 +208,53 @@ def check_premium_db(user_id):
     if row and row[0] is not None:
         if int(row[0]) > int(time.time()):
             return True
+            
     return False
+
+def redeem_key_logic(user_id, input_key):
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    db_path = os.path.join(base_dir, "volt.db")
     
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    
+    # Szukamy klucza (czyszcząc spacje)
+    clean_key = input_key.strip()
+    cursor.execute("SELECT days FROM license_keys WHERE key_code = ?", (clean_key,))
+    row = cursor.fetchone()
+    
+    if not row:
+        conn.close()
+        return {"status": "invalid"}
+        
+    days_to_add = row[0]
+    seconds_to_add = days_to_add * 24 * 60 * 60
+    now = int(time.time())
+    user_id_int = int(user_id)
+    
+    # Sprawdzamy, czy użytkownik ma już aktywne Premium
+    cursor.execute("SELECT premium_until FROM subscriptions WHERE user_id = ?", (user_id_int,))
+    sub_row = cursor.fetchone()
+    
+    if sub_row and sub_row[0] > now:
+        new_expiry = sub_row[0] + seconds_to_add  # Przedłużamy obecne premium
+    else:
+        new_expiry = now + seconds_to_add         # Premium leci od teraz
+        
+    # Zapisujemy subskrypcję
+    cursor.execute("""
+        INSERT OR REPLACE INTO subscriptions (user_id, premium_until)
+        VALUES (?, ?)
+    """, (user_id_int, new_expiry))
+    
+    # Usuwamy zużyty klucz
+    cursor.execute("DELETE FROM license_keys WHERE key_code = ?", (clean_key,))
+    
+    conn.commit()
+    conn.close()
+    
+    return {"status": "success", "days": days_to_add}
+
 def is_premium(user_id: int) -> bool:
     # Zamieniamy ID na string, bo tak zapisujemy w bazie
     uid_str = str(user_id)
@@ -197,12 +268,13 @@ app = FastAPI()
 def premium_only():
     async def predicate(interaction: discord.Interaction) -> bool:
         user_id = interaction.user.id
+        # Sprawdzamy w osobnym wątku
         has_premium = await asyncio.to_thread(check_premium_db, user_id)
         
         if not has_premium:
             await interaction.response.send_message(
-                "**This feature requires Volt Premium!**\n"
-                "Visit our official web store to purchase a subscription: https://voltbot-az88.onrender.com/shop",
+                "❌ **This feature requires Volt Premium!**\n"
+                "Please enter a valid license key using `/redeem` or visit our store.",
                 ephemeral=True
             )
             return False
