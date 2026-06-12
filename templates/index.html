@@ -107,7 +107,7 @@
             margin: 0;               
             margin-bottom: 30px;     
             text-align: left;
-}
+        }
         .features li {
             margin-bottom: 12px;
             font-size: 15px;
@@ -137,6 +137,77 @@
             transform: scale(1.02);
             box-shadow: 0 0 15px rgba(0, 255, 240, 0.4);
         }
+
+        /* ⚠️ Ramka informacyjna z delikatną animacją pulsowania po bokach */
+        .payment-notice {
+            background-color: #16162a;
+            border: 1px solid #ffaa00;
+            border-left: 5px solid #ffaa00;
+            border-radius: 12px;
+            padding: 25px;
+            max-width: 680px;
+            margin: 50px auto 20px auto;
+            text-align: center;
+            box-shadow: 0 8px 16px rgba(0,0,0,0.3);
+            animation: pulse-border 2s infinite alternate;
+        }
+        @keyframes pulse-border {
+            0% { box-shadow: 0 8px 16px rgba(0,0,0,0.4); border-color: #ffaa00; }
+            100% { box-shadow: 0 0 20px rgba(255, 170, 0, 0.4); border-color: #ffcc00; }
+        }
+        .payment-notice strong {
+            color: #ffaa00;
+            font-size: 20px;
+            display: block;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        .payment-notice p {
+            margin: 0 0 15px 0;
+            color: #e0e0f0;
+            font-size: 16px;
+            line-height: 1.5;
+        }
+        .btn-contact {
+            display: inline-block;
+            background: #ffaa00;
+            color: #1a1a2e;
+            padding: 10px 24px;
+            text-decoration: none;
+            font-weight: bold;
+            border-radius: 6px;
+            transition: 0.3s;
+        }
+        .btn-contact:hover {
+            background: #ffcc00;
+            transform: scale(1.05);
+            box-shadow: 0 0 15px rgba(255, 170, 0, 0.5);
+        }
+
+        /* 📋 Układ sekcji krok po kroku 1, 2, 3 */
+        .steps-container {
+            display: flex;
+            justify-content: space-between;
+            max-width: 730px;
+            margin: 40px auto;
+            gap: 20px;
+        }
+        .step {
+            background-color: #16162a;
+            border: 1px solid #303056;
+            border-radius: 10px;
+            padding: 20px;
+            flex: 1;
+            font-size: 14px;
+            color: #b0b0d0;
+            text-align: center;
+        }
+        .step h4 {
+            margin: 0 0 8px 0;
+            color: #00fff0;
+            font-size: 18px;
+        }
     </style>
 </head>
 <body>
@@ -154,59 +225,81 @@
 
         <div class="pricing-table">
             <div class="card">
-    <div class="plan-name">Monthly Pass</div>
-    <div class="price">$4.99 <span>/ 30 days</span></div>
-    <ul class="features">
-        <li>Full Access to /daily</li>
-        <li>Premium Role on Support</li>
-        <li>Advanced Economy Tools</li>
-        <li>24/7 Uptime Guaranteed</li>
-    </ul>
-    <a href="https://www.paypal.com/cgi-bin/webscr?cmd=_xclick&business=fabianekzielenkiewicz@gmail.com&item_name=VoltBot%20Premium%20-%2030%20Days&amount=4.99&currency_code=USD" target="_blank" class="btn">Buy via PayPal</a>
-</div>
+                <div class="plan-name">Monthly Pass</div>
+                <div class="price">$4.99 <span>/ 30 days</span></div>
+                <ul class="features">
+                    <li>Full Access to /daily</li>
+                    <li>Premium Role on Support</li>
+                    <li>Advanced Economy Tools</li>
+                    <li>24/7 Uptime Guaranteed</li>
+                </ul>
+                <a href="https://www.paypal.com/cgi-bin/webscr?cmd=_xclick&business=fabianekzielenkiewicz@gmail.com&item_name=VoltBot%20Premium%20-%2030%20Days&amount=4.99&currency_code=USD" target="_blank" class="btn">Buy via PayPal</a>
+            </div>
 
-<div class="card popular">
-    <div class="badge">Best Value</div>
-    <div class="plan-name">Lifetime Pro</div>
-    <div class="price">$14.99 <span>/ forever</span></div>
-    <ul class="features">
-        <li>All Monthly Features</li>
-        <li>One-time Payment</li>
-        <li>No Renewal Needed</li>
-        <li>Priority Feature Requests</li>
-        <li>Exclusive Bot Badge</li>
-    </ul>
-    <a href="https://www.paypal.com/cgi-bin/webscr?cmd=_xclick&business=fabianekzielenkiewicz@gmail.com&item_name=VoltBot%20Premium%20-%20Lifetime&amount=14.99&currency_code=USD" target="_blank" class="btn">Buy via PayPal</a>
-</div>
+            <div class="card popular">
+                <div class="badge">Best Value</div>
+                <div class="plan-name">Lifetime Pro</div>
+                <div class="price">$14.99 <span>/ forever</span></div>
+                <ul class="features">
+                    <li>All Monthly Features</li>
+                    <li>One-time Payment</li>
+                    <li>No Renewal Needed</li>
+                    <li>Priority Feature Requests</li>
+                    <li>Exclusive Bot Badge</li>
+                </ul>
+                <a href="https://www.paypal.com/cgi-bin/webscr?cmd=_xclick&business=fabianekzielenkiewicz@gmail.com&item_name=VoltBot%20Premium%20-%20Lifetime&amount=14.99&currency_code=USD" target="_blank" class="btn">Buy via PayPal</a>
+            </div>
         </div>
+
+        <div class="payment-notice">
+            <strong>⚠️ Action Required After Payment</strong>
+            <p>To receive your premium license key, you must send a message to me after successful payment. Click the button below to get in touch instantly!</p>
+            <a href="https://discord.gg/BCjbgqhK" target="_blank" class="btn-contact">💬 Contact Me on Discord</a>
+        </div>
+
+        <div class="steps-container">
+            <div class="step">
+                <h4>1. Purchase 💳</h4>
+                <p>Choose your plan and complete the secure payment via PayPal.</p>
+            </div>
+            <div class="step">
+                <h4>2. Get Key ✉️</h4>
+                <p>Click the contact button above and send me a message to receive your key.</p>
+            </div>
+            <div class="step">
+                <h4>3. Redeem 🔑</h4>
+                <p>Go to Discord and type <code>/redeem</code> to instantly activate Premium status!</p>
+            </div>
+        </div>
+
     </div>
 
-<div class="profile-checker" style="background-color: #16162a; border: 1px solid #303056; border-radius: 16px; padding: 30px; max-width: 500px; margin: 50px auto 0 auto; box-shadow: 0 8px 16px rgba(0,0,0,0.4); text-align: center;">
-            <h2 style="color: white; margin-top: 0;">🔍 Check Player Profile</h2>
-            <p style="color: #b0b0d0; font-size: 14px;">Enter Discord User ID to check balance and premium status.</p>
-            
-           <form method="POST" action="/shop" style="margin-top: 20px;">
-                <div style="display: flex; gap: 10px; justify-content: center;">
-                    <input type="text" name="user_id" placeholder="e.g. 123456789" required style="background-color: #1a1a2e; border: 1px solid #303056; color: white; padding: 12px; border-radius: 8px; font-size: 16px; width: 60%;">
-                    <button type="submit" style="background: linear-gradient(45deg, #00fff0, #0088ff); color: #1a1a2e; border: none; padding: 12px 20px; font-weight: bold; border-radius: 8px; cursor: pointer;">Check</button>
-                </div>
-            </form>
-
-            {% if user_data %}
-            <div style="margin-top: 25px; padding: 15px; background-color: #1a1a2e; border-radius: 8px; text-align: left; border-left: 4px solid #00fff0;">
-                <h3 style="margin-top: 0; color: #00fff0;">👤 {{ user_data.username }}</h3>
-                <p style="color: white;"><strong>User ID:</strong> {{ user_data.id }}</p>
-                <p style="color: white;"><strong>Volt Coins:</strong> <span style="color: #ffd700; font-weight: bold;">🪙 {{ user_data.coins }}</span></p>
-                <p style="color: white;"><strong>Premium Status:</strong> 
-                    {% if user_data.premium %}
-                        <span style="color: #00ff88; font-weight: bold;">👑 Premium Active</span>
-                    {% else %}
-                        <span style="color: #ff4a4a;">❌ Non-Premium</span>
-                    {% endif %}
-                </p>
+    <div class="profile-checker" style="background-color: #16162a; border: 1px solid #303056; border-radius: 16px; padding: 30px; max-width: 500px; margin: 50px auto 0 auto; box-shadow: 0 8px 16px rgba(0,0,0,0.4); text-align: center;">
+        <h2 style="color: white; margin-top: 0;">🔍 Check Player Profile</h2>
+        <p style="color: #b0b0d0; font-size: 14px;">Enter Discord User ID to check balance and premium status.</p>
+        
+        <form method="POST" action="/shop" style="margin-top: 20px;">
+            <div style="display: flex; gap: 10px; justify-content: center;">
+                <input type="text" name="user_id" placeholder="e.g. 123456789" required style="background-color: #1a1a2e; border: 1px solid #303056; color: white; padding: 12px; border-radius: 8px; font-size: 16px; width: 60%;">
+                <button type="submit" style="background: linear-gradient(45deg, #00fff0, #0088ff); color: #1a1a2e; border: none; padding: 12px 20px; font-weight: bold; border-radius: 8px; cursor: pointer;">Check</button>
             </div>
-            {% endif %}
+        </form>
+
+        {% if user_data %}
+        <div style="margin-top: 25px; padding: 15px; background-color: #1a1a2e; border-radius: 8px; text-align: left; border-left: 4px solid #00fff0;">
+            <h3 style="margin-top: 0; color: #00fff0;">👤 {{ user_data.username }}</h3>
+            <p style="color: white;"><strong>User ID:</strong> {{ user_data.id }}</p>
+            <p style="color: white;"><strong>Volt Coins:</strong> <span style="color: #ffd700; font-weight: bold;">🪙 {{ user_data.coins }}</span></p>
+            <p style="color: white;"><strong>Premium Status:</strong> 
+                {% if user_data.premium %}
+                    <span style="color: #00ff88; font-weight: bold;">👑 Premium Active</span>
+                {% else %}
+                    <span style="color: #ff4a4a;">❌ Non-Premium</span>
+                {% endif %}
+            </p>
         </div>
+        {% endif %}
+    </div>
     
 </body>
 </html>
