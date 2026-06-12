@@ -198,16 +198,25 @@ def check_premium_db(user_id):
     base_dir = os.path.dirname(os.path.abspath(__file__))
     db_path = os.path.join(base_dir, "volt.db")
     
+    if not os.path.exists(db_path):
+        db_path = "volt.db"
+        
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     
-    cursor.execute("SELECT premium_until FROM subscriptions WHERE user_id = ?", (int(user_id),))
+    cursor.execute(
+        "SELECT premium_until FROM subscriptions WHERE user_id = ? OR user_id = ?", 
+        (int(user_id), str(user_id))
+    )
     row = cursor.fetchone()
     conn.close()
     
     if row and row[0] is not None:
-        if int(row[0]) > int(time.time()):
-            return True
+        try:
+            if int(row[0]) > int(time.time()):
+                return True
+        except ValueError:
+            return False
             
     return False
 
