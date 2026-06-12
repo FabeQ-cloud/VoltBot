@@ -197,27 +197,49 @@ init_subs_db()
 def check_premium_db(user_id):
     base_dir = os.path.dirname(os.path.abspath(__file__))
     db_path = os.path.join(base_dir, "volt.db")
-    
+
     if not os.path.exists(db_path):
         db_path = "volt.db"
-        
+
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
-    
-    cursor.execute(
-        "SELECT premium_until FROM subscriptions WHERE user_id = ? OR user_id = ?", 
-        (int(user_id), str(user_id))
-    )
-    row = cursor.fetchone()
-    conn.close()
-    
-    if row and row[0] is not None:
+    current_time = int(time.time())
+
+    try:
+        cursor.execute(
+            "SELECT premium_until FROM subscriptions WHERE user_id = ? OR user_id = ?",
+            (int(user_id), str(user_id)),
+        )
+        row = cursor.fetchone()
+        if row and row[0] is not None and int(row[0]) > current_time:
+            conn.close()
+            return True
+    except sqlite3.OperationalError:
+        pass 
+
+    try:
+        cursor.execute(
+            "SELECT expires_at FROM licenses WHERE user_id = ? OR user_id = ?",
+            (int(user_id), str(user_id)),
+        )
+        row = cursor.fetchone()
+        if row and row[0] is not None and int(row[0]) > current_time:
+            conn.close()
+            return True
+    except sqlite3.OperationalError:
         try:
-            if int(row[0]) > int(time.time()):
+            cursor.execute(
+                "SELECT premium_until FROM licenses WHERE user_id = ? OR user_id = ?",
+                (int(user_id), str(user_id)),
+            )
+            row = cursor.fetchone()
+            if row and row[0] is not None and int(row[0]) > current_time:
+                conn.close()
                 return True
-        except ValueError:
-            return False
-            
+        except sqlite3.OperationalError:
+            pass
+
+    conn.close()
     return False
 
 def redeem_key_logic(user_id, input_key):
