@@ -198,15 +198,11 @@ def check_premium_db(user_id):
     base_dir = os.path.dirname(os.path.abspath(__file__))
     db_path = os.path.join(base_dir, "volt.db")
 
-    if not os.path.exists(db_path):
-        db_path = "volt.db"
-
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     current_time = int(time.time())
 
     try:
-        # Szukamy w tabeli 'licenses' po kolumnie 'used_by_user_id'
         cursor.execute(
             "SELECT expires_at FROM licenses WHERE used_by_user_id = ? AND is_used = 1",
             (str(user_id),),
@@ -214,7 +210,6 @@ def check_premium_db(user_id):
         row = cursor.fetchone()
 
         if row and row[0] is not None:
-            # Ponieważ expires_at jest jako TEXT, bezpiecznie konwertujemy na int
             if int(row[0]) > current_time:
                 conn.close()
                 return True
@@ -223,6 +218,7 @@ def check_premium_db(user_id):
 
     conn.close()
     return False
+    
 def redeem_key_logic(user_id, input_key):
     base_dir = os.path.dirname(os.path.abspath(__file__))
     db_path = os.path.join(base_dir, "volt.db")
