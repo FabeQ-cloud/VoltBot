@@ -1055,11 +1055,14 @@ async def balance(interaction: discord.Interaction):
 
 # Pomocnicza funkcja do operacji na bazie - uruchamiana w osobnym wątku
 def process_daily_db(user_id):
-    conn = sqlite3.connect("volt.db", timeout=10)
+    # Wymuszamy absolutną ścieżkę, żeby baza nie znikała po restarcie bota
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    db_path = os.path.join(base_dir, "volt.db")
+
+    conn = sqlite3.connect(db_path, timeout=10)
     cursor = conn.cursor()
 
     try:
-        # 🌟 POPRAWKA: Szukamy w ekonomii jako INT lub jako STR, żeby na pewno znaleźć Twój profil
         cursor.execute(
             "SELECT balance, last_daily, streak FROM economy WHERE user_id = ? OR user_id = ?",
             (int(user_id), str(user_id)),
@@ -1068,7 +1071,9 @@ def process_daily_db(user_id):
 
         now = int(time.time())
         cooldown = 86400
-        base_reward = 1000
+
+        # 💰 TUTAJ USTASZ OKREŚLONĄ ILOŚĆ MONET (np. 5000 monet na start)
+        base_reward = 5000
 
         if row:
             balance, last_daily, streak = row
@@ -1091,10 +1096,10 @@ def process_daily_db(user_id):
             else:
                 streak = 1
 
+            # Możesz zostawić bonus za streak (+streak * 50) albo go usunąć
             reward = base_reward + (streak * 50)
             new_balance = balance + reward
 
-            # 🌟 POPRAWKA: Aktualizujemy rekord sprawdzając oba typy danych
             cursor.execute(
                 """
                 UPDATE economy
@@ -1109,7 +1114,6 @@ def process_daily_db(user_id):
             reward = base_reward
             new_balance = reward
 
-            # 🌟 POPRAWKA: Dla bezpieczeństwa nowych wpisów, zapisujemy ID jako INT
             cursor.execute(
                 """
                 INSERT INTO economy (user_id, balance, last_daily, streak)
@@ -1138,6 +1142,7 @@ def process_daily_db(user_id):
         "streak": streak,
         "new_balance": new_balance,
     }
+    
 @bot.tree.command(name="daily", description="Claim your daily reward")
 @premium_only()
 async def daily(interaction: discord.Interaction):
