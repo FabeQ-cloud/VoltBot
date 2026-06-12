@@ -168,27 +168,22 @@ def check_premium_db(user_id):
     conn = sqlite3.connect("volt.db")
     cursor = conn.cursor()
     
-    # Wymuszamy int() na user_id na wypadek, gdyby w bazie był zapisany jako tekst
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS subscriptions (
+            user_id INTEGER PRIMARY KEY,
+            premium_until INTEGER
+        )
+    """)
+    
     cursor.execute("SELECT premium_until FROM subscriptions WHERE user_id = ?", (int(user_id),))
     row = cursor.fetchone()
-    
     conn.close()
     
     if row and row[0] is not None:
-        try:
-            premium_until = int(row[0]) # Konwertujemy wynik z bazy na int
-            current_time = int(time.time())
-            
-            
-            print(f"DEBUG PREMIUM: User {user_id} has premium until {premium_until}. Current time: {current_time}")
-            
-            if premium_until > current_time:
-                return True
-        except ValueError:
-            print(f"❌ DEBUG PREMIUM: Błąd konwersji timestampu dla użytkownika {user_id}")
-            return False
-            
+        if int(row[0]) > int(time.time()):
+            return True
     return False
+    
 def is_premium(user_id: int) -> bool:
     # Zamieniamy ID na string, bo tak zapisujemy w bazie
     uid_str = str(user_id)
@@ -199,19 +194,15 @@ def is_premium(user_id: int) -> bool:
     return False
 
 app = FastAPI()
-
 def premium_only():
     async def predicate(interaction: discord.Interaction) -> bool:
         user_id = interaction.user.id
-        
-        # Bezpiecznie pytamy bazę danych w osobnym wątku
         has_premium = await asyncio.to_thread(check_premium_db, user_id)
         
         if not has_premium:
-            # Informujemy użytkownika, że ta funkcja wymaga zakupu
             await interaction.response.send_message(
-                "❌ **This feature requires Volt Premium!**\n"
-                "Visit the link: https://voltbot-az88.onrender.com/shop to purchase a license key and support the project.",
+                "**This feature requires Volt Premium!**\n"
+                "Visit our official web store to purchase a subscription: https://voltbot-az88.onrender.com/shop",
                 ephemeral=True
             )
             return False
