@@ -1055,14 +1055,14 @@ async def balance(interaction: discord.Interaction):
 
 # Pomocnicza funkcja do operacji na bazie - uruchamiana w osobnym wątku
 def process_daily_db(user_id):
-    # Added timeout=10 to prevent SQLite thread locking issues
     conn = sqlite3.connect("volt.db", timeout=10)
     cursor = conn.cursor()
 
     try:
+        # 🌟 POPRAWKA: Szukamy w ekonomii jako INT lub jako STR, żeby na pewno znaleźć Twój profil
         cursor.execute(
-            "SELECT balance, last_daily, streak FROM economy WHERE user_id = ?",
-            (int(user_id),),
+            "SELECT balance, last_daily, streak FROM economy WHERE user_id = ? OR user_id = ?",
+            (int(user_id), str(user_id)),
         )
         row = cursor.fetchone()
 
@@ -1085,6 +1085,7 @@ def process_daily_db(user_id):
                     "minutes": minutes,
                 }
 
+            # 2. Streak check
             if last_daily and now - last_daily <= cooldown * 2:
                 streak += 1
             else:
@@ -1093,13 +1094,14 @@ def process_daily_db(user_id):
             reward = base_reward + (streak * 50)
             new_balance = balance + reward
 
+            # 🌟 POPRAWKA: Aktualizujemy rekord sprawdzając oba typy danych
             cursor.execute(
                 """
                 UPDATE economy
                 SET balance = ?, last_daily = ?, streak = ?
-                WHERE user_id = ?
+                WHERE user_id = ? OR user_id = ?
                 """,
-                (new_balance, now, streak, int(user_id)),
+                (new_balance, now, streak, int(user_id), str(user_id)),
             )
         else:
             # New user in the economy system
@@ -1107,6 +1109,7 @@ def process_daily_db(user_id):
             reward = base_reward
             new_balance = reward
 
+            # 🌟 POPRAWKA: Dla bezpieczeństwa nowych wpisów, zapisujemy ID jako INT
             cursor.execute(
                 """
                 INSERT INTO economy (user_id, balance, last_daily, streak)
@@ -1118,9 +1121,8 @@ def process_daily_db(user_id):
         conn.commit()
 
     except Exception as e:
-        print(f"[ECONOMY ERROR] Database error occurred: {e}")
+        print(f"❌ [ECONOMY ERROR] Database error occurred: {e}")
         conn.close()
-        # Fallback return so the bot never gets stuck on "thinking"
         return {
             "status": "success",
             "reward": 0,
