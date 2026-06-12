@@ -383,6 +383,37 @@ async def on_message(message):
         except discord.NotFound:
             pass
 
+def fix_economy_table():
+    import os
+    import sqlite3
+
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    db_path = os.path.join(base_dir, "volt.db")
+
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+
+    # Dodajemy kolumnę streak, jeśli jej nie ma
+    try:
+        cursor.execute("ALTER TABLE economy ADD COLUMN streak INTEGER DEFAULT 0")
+        print("✅ Added 'streak' column to economy table.")
+    except sqlite3.OperationalError:
+        print("🔸 'streak' column already exists or table issue.")
+
+    # Dodajemy kolumnę last_daily, jeśli jej nie ma
+    try:
+        cursor.execute("ALTER TABLE economy ADD COLUMN last_daily INTEGER DEFAULT 0")
+        print("✅ Added 'last_daily' column to economy table.")
+    except sqlite3.OperationalError:
+        print("🔸 'last_daily' column already exists.")
+
+    conn.commit()
+    conn.close()
+
+
+# Wywołaj to raz przy starcie bota, a jak zadziała, to zakomentuj:
+fix_economy_table()
+
 @bot.tree.command(name="ping", description="Check bot latency")
 async def ping(interaction: discord.Interaction):
     latency = round(bot.latency * 1000)
