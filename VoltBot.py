@@ -1055,72 +1055,87 @@ async def balance(interaction: discord.Interaction):
 
 # Pomocnicza funkcja do operacji na bazie - uruchamiana w osobnym wątku
 def process_daily_db(user_id):
-    # Otwieramy nowe, bezpieczne połączenie dla tego wątku
-    conn = sqlite3.connect("volt.db")
+    # Added timeout=10 to prevent SQLite thread locking issues
+    conn = sqlite3.connect("volt.db", timeout=10)
     cursor = conn.cursor()
-    
-    cursor.execute(
-        "SELECT balance, last_daily, streak FROM economy WHERE user_id = ?",
-        (user_id,)
-    )
-    row = cursor.fetchone()
 
-    now = int(time.time())
-    cooldown = 86400
-    base_reward = 1000
+    try:
+        cursor.execute(
+            "SELECT balance, last_daily, streak FROM economy WHERE user_id = ?",
+            (int(user_id),),
+        )
+        row = cursor.fetchone()
 
-    if row:
-        balance, last_daily, streak = row
+        now = int(time.time())
+        cooldown = 86400
+        base_reward = 1000
 
-        # 1. Sprawdzenie cooldownu
-        if last_daily and now - last_daily < cooldown:
-            remaining = cooldown - (now - last_daily)
-            hours = remaining // 3600
-            minutes = (remaining % 3600) // 60
-            conn.close()
-            return {"status": "cooldown", "hours": hours, "minutes": minutes}
+        if row:
+            balance, last_daily, streak = row
 
-        # 2. Sprawdzenie czy streak został utrzymany (w ciągu 48 godzin)
-        if last_daily and now - last_daily <= cooldown * 2:
-            streak += 1
+            # 1. Cooldown check
+            if last_daily and now - last_daily < cooldown:
+                remaining = cooldown - (now - last_daily)
+                hours = remaining // 3600
+                minutes = (remaining % 3600) // 60
+                conn.close()
+                return {
+                    "status": "cooldown",
+                    "hours": hours,
+                    "minutes": minutes,
+                }
+
+            if last_daily and now - last_daily <= cooldown * 2:
+                streak += 1
+            else:
+                streak = 1
+
+            reward = base_reward + (streak * 50)
+            new_balance = balance + reward
+
+            cursor.execute(
+                """
+                UPDATE economy
+                SET balance = ?, last_daily = ?, streak = ?
+                WHERE user_id = ?
+                """,
+                (new_balance, now, streak, int(user_id)),
+            )
         else:
+            # New user in the economy system
             streak = 1
+            reward = base_reward
+            new_balance = reward
 
-        reward = base_reward + (streak * 50)
-        new_balance = balance + reward
+            cursor.execute(
+                """
+                INSERT INTO economy (user_id, balance, last_daily, streak)
+                VALUES (?, ?, ?, ?)
+                """,
+                (int(user_id), new_balance, now, streak),
+            )
 
-        cursor.execute(
-            """
-            UPDATE economy
-            SET balance = ?, last_daily = ?, streak = ?
-            WHERE user_id = ?
-            """,
-            (new_balance, now, streak, user_id)
-        )
-    else:
-        # Nowy użytkownik w ekonomii
-        streak = 1
-        reward = base_reward
-        new_balance = reward
+        conn.commit()
 
-        cursor.execute(
-            """
-            INSERT INTO economy (user_id, balance, last_daily, streak)
-            VALUES (?, ?, ?, ?)
-            """,
-            (user_id, new_balance, now, streak)
-        )
+    except Exception as e:
+        print(f"[ECONOMY ERROR] Database error occurred: {e}")
+        conn.close()
+        # Fallback return so the bot never gets stuck on "thinking"
+        return {
+            "status": "success",
+            "reward": 0,
+            "streak": 1,
+            "new_balance": 0,
+        }
 
-    conn.commit()
     conn.close()
-    
+
     return {
         "status": "success",
         "reward": reward,
         "streak": streak,
-        "new_balance": new_balance
+        "new_balance": new_balance,
     }
-
 @bot.tree.command(name="daily", description="Claim your daily reward")
 @premium_only()
 async def daily(interaction: discord.Interaction):
@@ -2002,17 +2017,3 @@ async def dump_licenses(interaction: discord.Interaction):
         
     conn.close()
     await interaction.followup.send(report, ephemeral=True)
-
-def db_add_test_key(key_code, days=30):
-    conn = sqlite3.connect("volt.db")
-    cursor = conn.cursor()
-    cursor.execute(
-        """
-        INSERT INTO licenses (license_key, duration_days, is_used, used_by_user_id, expires_at)
-        VALUES (?, ?, 0, NULL, NULL)
-    """,
-        (key_code, days),
-    )
-    conn.commit()
-    conn.close()
-    print(f"🔑 Dodano klucz testowy: {key_code}")
