@@ -1848,3 +1848,79 @@ print(f"[DEBUG] Sprawdzanie komend przed startem:")
 print(f"[DEBUG] Liczba komend w tree: {len(bot.tree.get_commands())}")
 for cmd in bot.tree.get_commands():
     print(f"[DEBUG] Znaleziono komendę: {cmd.name}")
+
+@bot.tree.command(
+    name="debug_premium",
+    description="DEVELOPER ONLY: Find out exactly why premium is not working",
+)
+async def debug_premium(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
+
+    user_id = interaction.user.id
+    current_time = int(time.time())
+
+    # 1. Szukamy wszystkich plików .db w folderze projektu, żeby sprawdzić czy nie ma duplikatów
+    db_files = []
+    for root, dirs, files in os.walk("."):
+        for file in files:
+            if file.endswith(".db"):
+                full_path = os.path.join(root, file)
+                db_files.append(full_path)
+
+    report = f"**Znalezione pliki baz danych na dysku:** {db_files}\n\n"
+
+    # 2. Przeszukujemy każdy znaleziony plik w poszukiwaniu Twojego ID
+    report += f"**Szukam ID użytkownika:** `{user_id}` (jako liczba i jako tekst)\n\n"
+
+    for db_path in db_files:
+        report += f"**Analizuję plik:** `{db_path}`\n"
+        try:
+            conn = sqlite3.connect(db_path)
+            cursor = conn.cursor()
+
+            # Pobieramy listy tabel w tym konkretnym pliku
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
+            tables = [row[0] for row in cursor.fetchall()]
+            report += f"  ↳ Tabele w tym pliku: {tables}\n"
+
+            for table in tables:
+                # Sprawdzamy strukturę tabeli
+                cursor.execute(f"PRAGMA table_info({table})")
+                columns = [col[1] for col in cursor.fetchall()]
+
+                if "user_id" in columns:
+                    # Szukamy wpisu dla Twojego ID
+                    cursor.execute(
+                        f"SELECT * FROM {table} WHERE user_id = ? OR user_id = ?",
+                        (int(user_id), str(user_id)),
+                    )
+                    row = cursor.fetchone()
+
+                    if row:
+                        report += f"  **Znalazłem wpis w tabeli `{table}`!**\n"
+                        report += f"  ↳ Dane w bazie: `{row}`\n"
+                        # Szukamy kolumny z czasem wygaśnięcia (zazwyczaj druga kolumna)
+                        try:
+                            expiry = int(row[1])
+                            report += f"  ↳ Czas wygaśnięcia (Unix): `{expiry}`\n"
+                            if expiry > current_time:
+                                report += "  ↳ STATUS: Ważne (Powinno działać!)\n"
+                            else:
+                                report += f"  ↳ STATUS: Wygasło (Różnica: {current_time - expiry} sekund temu)\n"
+                        except:
+                            report += "  ↳ STATUS: Nie mogłem odczytać czasu wygaśnięcia.\n"
+                    else:
+                        report += f"  🔸 Brak wpisu dla Twojego ID w tabeli `{table}`.\n"
+
+            conn.close()
+        except Exception as e:
+            report += f"  Błąd odczytu pliku: {str(e)}\n"
+        report += "\n"
+
+    report += f"**Aktualny czas bota (Unix):** `{current_time}`"
+
+    # Jeśli raport jest za długi, dzielimy go na części
+    if len(report) > 2000:
+        report = report[:1950] + "\n... (obcięto zbyt długi raport)"
+
+    await interaction.followup.send(report, ephemeral=True)
