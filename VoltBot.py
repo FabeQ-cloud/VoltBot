@@ -477,8 +477,7 @@ async def on_message(message):
             embed.add_field(name="Channel", value=spam_channel.mention, inline=True)
             embed.add_field(
                 name="Last Message Caught",
-                value=f"```{last_spam_content}
-```",
+                value=f"```\n{last_spam_content}\n```",
                 inline=False,
             )
             embed.set_footer(text="VoltBot Security Systems")
