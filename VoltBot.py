@@ -18,6 +18,7 @@ import os
 from dotenv import load_dotenv
 import contextlib
 from fastapi import FastAPI
+import collections
 
 class VoltBot(discord.Client):
     def __init__(self):
@@ -483,6 +484,34 @@ def fix_economy_table():
 
 # Wywołaj to raz przy starcie bota, a jak zadziała, to zakomentuj:
 fix_economy_table()
+
+user_msg_times = collections.defaultdict(list)
+
+MSG_LIMIT = 5
+TIME_WINDOW = 3
+
+@bot.event
+async def on_message(message):
+    if message.author.bot or not message.guild:
+        return
+
+    user_id = message.author.id
+    current_time = time.time()
+
+    user_msg_times[user_id].append(current_time)
+
+    user_msg_times[user_id] = [t for t in user_msg_times[user_id] if current_time - t < TIME_WINDOW]
+    
+    if len(user_msg_times[user_id]) > MSG_LIMIT:
+        try:
+           
+            await message.channel.send(f"⚠️ {message.author.mention}, Stop Spamming!", delete_after=5)
+            await message.delete()
+            return
+        except:
+            pass
+
+    await bot.process_commands(message)
 
 @bot.tree.command(name="ping", description="Check bot latency")
 async def ping(interaction: discord.Interaction):
