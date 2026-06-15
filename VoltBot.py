@@ -413,46 +413,90 @@ def is_licensed(guild_id: int):
 
     return time.time() < expires
         
+# Upewnij się, że słowniki są zainicjalizowane na początku pliku:
+user_message_times = collections.defaultdict(list)
+user_recent_messages = collections.defaultdict(list)
+
+
 @bot.event
 async def on_message(message):
-
-    if message.author.bot:
+    if message.author.bot or not message.guild:
         return
-    
+
+    if message.author.guild_permissions.administrator:
+        await bot.process_commands(message)
+        return
+
     user_id = message.author.id
     current_time = time.time()
 
     user_message_times[user_id].append(current_time)
-
     user_message_times[user_id] = [
-        t for t in user_message_times[user_id]
-        if current_time - t < 5
+        t for t in user_message_times[user_id] if current_time - t < 5
     ]
 
     user_recent_messages[user_id].append(message)
-
     user_recent_messages[user_id] = user_recent_messages[user_id][-20:]
 
     if len(user_message_times[user_id]) >= 6:
+
+        last_spam_content = message.content if message.content else "[Brak tekstu / Obrazek]"
+        spam_channel = message.channel
+        spam_author = message.author
 
         for msg in user_recent_messages[user_id]:
             try:
                 await msg.delete()
             except (discord.NotFound, discord.Forbidden):
                 pass
+
         user_message_times[user_id].clear()
         user_recent_messages[user_id].clear()
 
-        warning = await message.channel.send(
-            f"{message.author.mention} Stop spamming!"
+        warning = await spam_channel.send(
+            f"{spam_author.mention} Stop spamming!"
         )
 
-        await asyncio.sleep(3)
+        log_channel = discord.utils.get(
+            spam_author.guild.text_channels, name="voltbot-logs"
+        )
+        if not log_channel:
+            log_channel = discord.utils.get(
+                spam_author.guild.text_channels, name="mod-logs"
+            )
 
+        if log_channel:
+            embed = discord.Embed(
+                title="Anti-Spam Triggered",
+                description=f"VoltBot successfully intercepted spam from {spam_author.mention}.",
+                color=discord.Color.red(),
+                timestamp=discord.utils.utcnow(),  # Automatyczna data i godzina logu
+            )
+            embed.set_thumbnail(url=spam_author.display_avatar.url)
+            embed.add_field(name="User", value=f"{spam_author} (ID: {spam_author.id})", inline=True)
+            embed.add_field(name="Channel", value=spam_channel.mention, inline=True)
+            embed.add_field(
+                name="Last Message Caught",
+                value=f"```{last_spam_content}
+```",
+                inline=False,
+            )
+            embed.set_footer(text="VoltBot Security Systems")
+
+            try:
+                await log_channel.send(embed=embed)
+            except discord.Forbidden:
+                print(f"Brak uprawnień do wysłania logów na kanale {log_channel.name}")
+
+        await asyncio.sleep(3)
         try:
             await warning.delete()
         except discord.NotFound:
             pass
+
+        return
+
+    await bot.process_commands(message)
 
 def fix_economy_table():
     import os
@@ -463,8 +507,7 @@ def fix_economy_table():
 
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
-
-    # Dodajemy kolumnę streak, jeśli jej nie ma
+    
     try:
         cursor.execute("ALTER TABLE economy ADD COLUMN streak INTEGER DEFAULT 0")
         print("✅ Added 'streak' column to economy table.")
@@ -489,29 +532,6 @@ user_msg_times = collections.defaultdict(list)
 
 MSG_LIMIT = 5
 TIME_WINDOW = 3
-
-@bot.event
-async def on_message(message):
-    if message.author.bot or not message.guild:
-        return
-
-    user_id = message.author.id
-    current_time = time.time()
-
-    user_msg_times[user_id].append(current_time)
-
-    user_msg_times[user_id] = [t for t in user_msg_times[user_id] if current_time - t < TIME_WINDOW]
-    
-    if len(user_msg_times[user_id]) > MSG_LIMIT:
-        try:
-           
-            await message.channel.send(f"⚠️ {message.author.mention}, Stop Spamming!", delete_after=5)
-            await message.delete()
-            return
-        except:
-            pass
-
-    await bot.process_commands(message)
 
 @bot.tree.command(name="ping", description="Check bot latency")
 async def ping(interaction: discord.Interaction):
