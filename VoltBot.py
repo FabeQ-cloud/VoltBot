@@ -351,6 +351,41 @@ def grant_premium(user_id, days=30):
     conn.commit()
     conn.close()
     print(f"💎 Granted premium to {user_id} for {days} days (Expires at Unix: {new_expiry})")
+
+def init_new_features():
+    # Podmień na taką nazwę pliku, jakiej używasz na Renderze
+    conn = sqlite3.connect("volt.db") 
+    cursor = conn.cursor()
+    
+    # 1. Tworzymy tabelę dla rynku kryptowalut
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS crypto_market (
+        crypto_name TEXT PRIMARY KEY,
+        current_price REAL
+    );
+    """)
+    
+    # 2. Bezpiecznie dodajemy kolumny vtc_owned i byt_owned do tabeli users
+    # Używamy try/except, bo jeśli kolumny już istnieją, sqlite wywali błąd
+    try:
+        cursor.execute("ALTER TABLE users ADD COLUMN vtc_owned REAL DEFAULT 0.0;")
+        print("Dodano kolumnę vtc_owned do bazy danych.")
+    except sqlite3.OperationalError:
+        pass # Kolumna już istnieje, nic nie robimy
+
+    try:
+        cursor.execute("ALTER TABLE users ADD COLUMN byt_owned REAL DEFAULT 0.0;")
+        print("Dodano kolumnę byt_owned do bazy danych.")
+    except sqlite3.OperationalError:
+        pass # Kolumna już istnieje, nic nie robimy
+        
+    # 3. Wrzucamy początkowe ceny krypto, jeśli jeszcze ich nie ma
+    cursor.execute("INSERT OR IGNORE INTO crypto_market (crypto_name, current_price) VALUES ('VoltCoin', 100.0);")
+    cursor.execute("INSERT OR IGNORE INTO crypto_market (crypto_name, current_price) VALUES ('ByteCoin', 50.0);")
+    
+    conn.commit()
+    conn.close()
+    print("🤖 [VoltBot DB] Nowe tabele i kolumny ekonomii zostały sprawdzone/dodane!")
     
 def ensure_user(user_id):
     cursor.execute(
