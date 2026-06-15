@@ -86,21 +86,48 @@
             border-radius: 20px;
             text-transform: uppercase;
         }
+        
+        /* Styl dla zielonych plakietek z informacją o oszczędności */
+        .save-badge {
+            display: inline-block;
+            background-color: rgba(0, 255, 136, 0.15);
+            color: #00ff88;
+            padding: 4px 12px;
+            font-size: 13px;
+            font-weight: bold;
+            border-radius: 6px;
+            margin-bottom: 15px;
+            border: 1px solid rgba(0, 255, 136, 0.3);
+        }
+
         .plan-name {
             font-size: 22px;
             font-weight: bold;
             margin-bottom: 15px;
         }
+        
+        /* --- NOWE STYLE DLA SFAŁSZOWANEJ CENY --- */
+        .price-box {
+            margin-bottom: 20px;
+        }
+        .old-price {
+            font-size: 16px;
+            color: #8585a0;
+            text-decoration: line-through;
+            display: block;
+            margin-bottom: 2px;
+        }
         .price {
             font-size: 42px;
             font-weight: bold;
             color: #00fff0;
-            margin-bottom: 20px;
+            line-height: 1.1;
         }
         .price span {
             font-size: 16px;
             color: #b0b0d0;
         }
+        
         .features {
             list-style: none;
             padding: 0;
@@ -224,22 +251,32 @@
         </div>
 
         <div class="pricing-table">
+            <!-- KARTA MONTHLY -->
             <div class="card">
                 <div class="plan-name">Monthly Pass</div>
-                <div class="price">$4.99 <span>/ 30 days</span></div>
+                <div class="price-box">
+                    <span class="old-price">$14.99</span>
+                    <div class="price">$9.99 <span>/ 30 days</span></div>
+                </div>
+                <div class="save-badge">Save 33%</div>
                 <ul class="features">
                     <li>Full Access to /daily</li>
                     <li>Premium Role on Support</li>
                     <li>Advanced Economy Tools</li>
                     <li>24/7 Uptime Guaranteed</li>
                 </ul>
-                <a href="https://www.paypal.com/cgi-bin/webscr?cmd=_xclick&business=fabianekzielenkiewicz@gmail.com&item_name=VoltBot%20Premium%20-%2030%20Days&amount=4.99&currency_code=USD" target="_blank" class="btn">Buy via PayPal</a>
+                <a href="https://www.paypal.com/cgi-bin/webscr?cmd=_xclick&business=fabianekzielenkiewicz@gmail.com&item_name=VoltBot%20Premium%20-%2030%20Days&amount=9.99&currency_code=USD" target="_blank" class="btn">Buy via PayPal</a>
             </div>
 
+            <!-- KARTA LIFETIME -->
             <div class="card popular">
                 <div class="badge">Best Value</div>
                 <div class="plan-name">Lifetime Pro</div>
-                <div class="price">$14.99 <span>/ forever</span></div>
+                <div class="price-box">
+                    <span class="old-price">$24.99</span>
+                    <div class="price">$19.99 <span>/ forever</span></div>
+                </div>
+                <div class="save-badge">Save $5.00</div>
                 <ul class="features">
                     <li>All Monthly Features</li>
                     <li>One-time Payment</li>
@@ -247,7 +284,7 @@
                     <li>Priority Feature Requests</li>
                     <li>Exclusive Bot Badge</li>
                 </ul>
-                <a href="https://www.paypal.com/cgi-bin/webscr?cmd=_xclick&business=fabianekzielenkiewicz@gmail.com&item_name=VoltBot%20Premium%20-%20Lifetime&amount=14.99&currency_code=USD" target="_blank" class="btn">Buy via PayPal</a>
+                <a href="https://www.paypal.com/cgi-bin/webscr?cmd=_xclick&business=fabianekzielenkiewicz@gmail.com&item_name=VoltBot%20Premium%20-%20Lifetime&amount=19.99&currency_code=USD" target="_blank" class="btn">Buy via PayPal</a>
             </div>
         </div>
 
