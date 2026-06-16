@@ -27,8 +27,8 @@ class VoteCommand(commands.Cog):
 
     def __init__(self, bot):
         self.bot = bot
-
-   @bot.tree.command(
+        
+@bot.tree.command(
     name="vote",
     description="Vote for VoltBot on Top.gg and claim your 500 coins reward!",
 )
