@@ -20,6 +20,80 @@ import contextlib
 from fastapi import FastAPI
 import collections
 
+user_last_vote = {}  # format: {user_id: datetime_object}
+
+
+class VoteCommand(commands.Cog):
+
+    def __init__(self, bot):
+        self.bot = bot
+
+    @app_commands.command(
+        name="vote", description="Vote for VoltBot on Top.gg and claim your 500 coins reward!"
+    )
+    async def vote(self, interaction: discord.Interaction):
+        user_id = interaction.user.id
+        now = datetime.datetime.utcnow()
+        cooldown_time = datetime.timedelta(hours=12)  # Głosować na Top.gg można co 12h
+
+        # 1. Sprawdzamy Cooldown
+        if user_id in user_last_vote:
+            last_vote_time = user_last_vote[user_id]
+            if now - last_vote_time < cooldown_time:
+                time_left = cooldown_time - (now - last_vote_time)
+                hours, remainder = divmod(int(time_left.total_seconds()), 3600)
+                minutes, _ = divmod(remainder, 60)
+
+                embed_cooldown = discord.Embed(
+                    title="⏳ Vote Cooldown",
+                    description=f"You have already claimed your voting reward! You can vote again in **{hours}h {minutes}m**.",
+                    color=discord.Color.orange(),
+                )
+                await interaction.response.send_message(
+                    embed=embed_cooldown, ephemeral=True
+                )
+                return
+
+        # 2. Tworzymy przycisk (Button), który przeniesie użytkownika prosto na Top.gg
+        # PODMIEŃ LINK PONIŻEJ NA SWÓJ LINK DO GŁOSOWANIA NA TOP.GG
+        topgg_url = f"https://top.gg/bot/{self.bot.user.id}/vote"
+
+        view = discord.ui.View()
+        button = discord.ui.Button(
+            label="Click Here to Vote!",
+            url=topgg_url,
+            style=discord.ButtonStyle.link,
+            emoji="🚀",
+        )
+        view.add_item(button)
+
+        # 3. Dodajemy nagrodę do ekonomii
+        reward_amount = 500
+        # TUTAJ DOPISZ SWÓJ KOD, KTÓRY DODAJE MONETY DO PROFILU UŻYTKOWNIKA, np:
+        # await add_money(user_id, reward_amount)
+
+        # 4. Zapisujemy czas odebrania nagrody
+        user_last_vote[user_id] = now
+
+        # 5. Wysyłamy Embed z podziękowaniem i przyciskiem
+        embed_vote = discord.Embed(
+            title="⚡ Support VoltBot!",
+            description=(
+                f"Thank you for supporting **VoltBot**!\n\n"
+                f"💰 **+{reward_amount} coins** have been added to your balance.\n"
+                f"Please make sure to actually click the button below and submit your vote on Top.gg!"
+            ),
+            color=discord.Color.purple(),
+        )
+        embed_vote.set_thumbnail(url=interaction.user.display_avatar.url)
+        embed_vote.set_footer(text="You can claim this reward every 12 hours.")
+
+        await interaction.response.send_message(embed=embed_vote, view=view)
+
+
+async def setup(bot):
+    await bot.add_cog(VoteCommand(bot))
+
 class VoltBot(discord.Client):
     def __init__(self):
         intents = discord.Intents.default()
