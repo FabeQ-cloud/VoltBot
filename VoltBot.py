@@ -1643,6 +1643,35 @@ def get_user_balance_and_rank(user_id: int) -> tuple[int, int]:
     finally:
         conn.close()
 
+def get_user_balance_and_rank(user_id: int) -> tuple[int, int]:
+    """Pobiera stan konta użytkownika oraz oblicza jego pozycję w globalnym rankingu bogactwa."""
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    db_path = os.path.join(base_dir, "volt.db")
+    
+    conn = sqlite3.connect(db_path, timeout=10)
+    cursor = conn.cursor()
+    
+    try:
+        # 1. Upewniamy się, że użytkownik istnieje w bazie (żeby nie było błędu pustego rekordu)
+        cursor.execute("INSERT OR IGNORE INTO economy (user_id, balance, last_daily, streak) VALUES (?, 0, 0, 0)", (user_id,))
+        conn.commit()
+        
+        # 2. Pobieramy stan konta użytkownika
+        cursor.execute("SELECT balance FROM economy WHERE user_id = ?", (user_id,))
+        balance = cursor.fetchone()[0]
+        
+        # 3. Obliczamy pozycję w rankingu (liczymy ile osób ma WIĘCEJ monet niż nasz użytkownik)
+        cursor.execute("SELECT COUNT(*) FROM economy WHERE balance > ?", (balance,))
+        rank = cursor.fetchone()[0] + 1  # +1 oznacza, że jeśli 0 osób ma więcej, zajmuje 1. miejsce
+        
+        return balance, rank
+        
+    except Exception as e:
+        print(f"🔴 [DB BALANCE ERROR]: {e}")
+        return 0, 999  # W razie błędu zwracamy bezpieczne wartości domyślne
+    finally:
+        conn.close()
+
 @bot.tree.command(name="balance", description="Check your current coin balance and leaderboard standings")
 @premium_only() # Komenda zabezpieczona Twoim nowym dekoratorem Premium!
 @app_commands.describe(user="Select a member to check their balance (Leave blank to check your own)")
