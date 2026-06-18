@@ -2248,8 +2248,8 @@ async def rank(interaction: discord.Interaction, user: discord.Member = None):
             color=0x00fff0 # Twój neonowy błękit VoltBota
         )
 
-def get_top_xp_data(limit: int = 10) -> list[tuple[int, int, int]]:
-    """Pobiera listę najlepszych użytkowników posortowaną po poziomie i XP."""
+def get_user_rank_data(user_id: int) -> tuple[int, int] | None:
+    """Pobiera (xp, level) dla użytkownika. Zwraca None, jeśli użytkownik nie ma jeszcze danych."""
     base_dir = os.path.dirname(os.path.abspath(__file__))
     db_path = os.path.join(base_dir, "volt.db")
     
@@ -2257,12 +2257,8 @@ def get_top_xp_data(limit: int = 10) -> list[tuple[int, int, int]]:
     cursor = conn.cursor()
     
     try:
-        cursor.execute("""
-            SELECT user_id, level, xp FROM levels
-            ORDER BY level DESC, xp DESC
-            LIMIT ?
-        """, (limit,))
-        return cursor.fetchall()
+        cursor.execute("SELECT xp, level FROM levels WHERE user_id = ?", (user_id,))
+        return cursor.fetchone()
     finally:
         conn.close()
 
@@ -2375,7 +2371,7 @@ def process_coinflip_gamble(user_id: int, bet_amount: int) -> tuple[str, dict]:
         conn.commit()
         return status, {"outcome": outcome, "new_balance": new_balance}
         
-    except Exception as e:
+   except Exception as e:
         conn.rollback()
         print(f"🔴 [DB COINFLIP ERROR]: {e}")
         return "error", {"error_msg": str(e)}
