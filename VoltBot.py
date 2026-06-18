@@ -161,7 +161,6 @@ conn.commit()
 conn.commit()
 
 def init_db():
-    # Wymuszamy absolutną ścieżkę, żeby bot zawsze widział ten sam plik
     base_dir = os.path.dirname(os.path.abspath(__file__))
     db_path = os.path.join(base_dir, "volt.db")
     
@@ -201,12 +200,14 @@ def init_db():
         CREATE TABLE IF NOT EXISTS economy (
             user_id INTEGER PRIMARY KEY,
             balance INTEGER DEFAULT 0,
-            last_daily REAL DEFAULT 0
-        )
+            last_daily INTEGER DEFAULT 0,
+            streak INTEGER DEFAULT 0
+        );
     """)
     
     conn.commit()
     conn.close()
+    
     print("✨ [DATABASE] Wszystkie tabele w volt.db zostały pomyślnie zsynchronizowane z kodem!")
 
 # Uruchamiamy tworzenie i aktualizację tabel przy starcie
@@ -1463,235 +1464,344 @@ async def serverinfo(interaction: discord.Interaction):
 
     await interaction.followup.send(embed=embed)
     
-@bot.tree.command(name="userinfo", description="Show information about a user")
-@app_commands.describe(user="Select a user")
-async def userinfo(interaction: discord.Interaction, user: discord.Member):
-    
-    embed= discord.Embed(
-        title=f"{user}",
-        color=0x00ffcc
-    )
+@bot.tree.command(name="userinfo", description="Display detailed profile statistics and account age of a member")
+@app_commands.describe(user="Select the member to inspect (Leave blank to inspect yourself)")
+async def userinfo(interaction: discord.Interaction, user: discord.Member = None):
+    # Deferujemy odpowiedź, żeby bot na spokojnie przetworzył awatary i daty
+    await interaction.response.defer(ephemeral=False)
 
-    embed.add_field(
-        name="User ID",
-        value=str(user.id),
-        inline=False
-    )
+    # Jeśli użytkownik nie wybrał nikogo, bot sprawdza osobę wpisującą komendę
+    target_user = user or interaction.user
 
-    embed.add_field(
-        name="Joined Server",
-        value=user.joined_at.strftime("%d-%m-%Y"),
-        inline=False
-    )
-    embed.add_field(
-        name="Top Role",
-        value=user.top_role.mention,
-        inline=False
-    )
+    # 1. Konwersja dat na timestampy Discorda
+    created_timestamp = int(target_user.created_at.timestamp())
+    joined_timestamp = int(target_user.joined_at.timestamp()) if target_user.joined_at else None
 
-    embed.add_field(
-        name="Bot",
-        value="Yes" if user.bot else "No",
-        inline=False
-    )
+    # Tagi czasowe dla założenia konta
+    account_created_full = f"<t:{created_timestamp}:F>"
+    account_created_relative = f"<t:{created_timestamp}:R>"
 
-    embed.set_thumbnail(url=user.display_avatar.url)
+    # Tagi czasowe dla dołączenia na serwer
+    if joined_timestamp:
+        server_joined_full = f"<t:{joined_timestamp}:F>\n({f'<t:{joined_timestamp}:R>'})"
+    else:
+        server_joined_full = "`Unknown`"
 
-    await interaction.response.send_message(embed=embed)
-
-
-@bot.tree.command(name="timeout", description="Timeout a user")
-@app_commands.describe(
-    user="User to timeout",
-    minutes="Timeout duration in minutes",
-    reason="Reason"
-)
-async def timeout(
-    interaction: discord.Interaction,
-    user: discord.Member,
-    minutes: int,
-    reason: str = "No reason"
-):
-    
-    if not interaction.user.guild_permissions.moderate_members:
-        await interaction.response.send_message(
-            "You don't have permission",
-            ephemeral=True
-        )
-        return
-    try:
-        await user.timeout(
-            timedelta(minutes=minutes),
-            reason=reason
-        )
-
-        await interaction.response.send_message(
-            f"{user.mention} has been timed out for {minutes} minute(s).\nReason: {reason}"
-
-        )
-    except discord.Forbidden:
-        await interaction.response.send_message(
-            "I can't timeout this user.",
-            ephemeral=True
-        )
-
-@bot.tree.command(name="balance", description="Check your balance")
-@premium_only()
-async def balance(interaction: discord.Interaction):
-
-    user_id = interaction.user.id
-
-    
-    cursor.execute(
-        "SELECT balance FROM economy WHERE user_id = ?",
-        (user_id,)
-    )
-
-    row = cursor.fetchone()
-    balance = row[0] if row else 0
-
-
-    cursor.execute(
-        "SELECT COUNT(*) + 1 FROM economy WHERE balance > ?",
-        (balance,)
-    )
-
-    rank = cursor.fetchone()[0]
-
-    
+    # 2. Budowanie nowoczesnego Embedu profilu
     embed = discord.Embed(
-        title="Volt Wallet",
-        color=discord.Color.gold()
+        title=f"👤 User Profile — {target_user.name}",
+        color=0x00fff0 # Twój neonowy błękit VoltBota
     )
-
-    embed.set_thumbnail(url=interaction.user.display_avatar.url)
-
-    embed.add_field(
-        name="Balance",
-        value=f"**{balance:,}** coins",
-        inline=True
-    )
-
-    embed.add_field(
-        name="Leaderboard Rank",
-        value=f"**#{rank}**",
-        inline=True
-    )
-
     
+    # Podstawowe ID oraz typ konta poukładane w kolumnach
+    embed.add_field(name="🆔 User ID", value=f"`{target_user.id}`", inline=True)
+    embed.add_field(name="🤖 Bot Account", value="`Yes 🟣`" if target_user.bot else "`No 👤`", inline=True)
+    embed.add_field(name="🎭 Highest Role", value=target_user.top_role.mention, inline=False)
+
+    # Sekcja dat (amerykański standard modowy)
+    embed.add_field(
+        name="📆 Account Created", 
+        value=f"{account_created_full}\n({account_created_relative})", 
+        inline=False
+    )
+    embed.add_field(
+        name="🚪 Joined Server", 
+        value=server_joined_full, 
+        inline=False
+    )
+
+    # Ustawiamy awatar użytkownika jako główną miniaturkę
+    embed.set_thumbnail(url=target_user.display_avatar.url)
+    
+    # Dodatkowa estetyka: jeśli użytkownik ma ustawiony baner profilu, bot może go zaciągnąć (wymaga wyższych uprawnień/fetch)
     embed.set_footer(
-        text=f"Requested by {interaction.user.name}",
+        text=f"Requested by {interaction.user.name} • VoltBot Lookup", 
         icon_url=interaction.user.display_avatar.url
     )
 
-    await interaction.response.send_message(embed=embed)
+    await interaction.followup.send(embed=embed)
 
-@bot.tree.command(name="daily", description="Claim your daily reward")
-@premium_only()
-async def daily(interaction: discord.Interaction):
-    # Informujemy Discord, że bot przetwarza dane (zapobiega to zacięciu bota)
-    await interaction.response.defer()
+@bot.tree.command(name="timeout", description="Mute/Timeout a member to restrict them from typing or joining voice channels")
+@app_commands.describe(
+    user="The member to timeout",
+    minutes="Duration of the timeout in minutes",
+    reason="The reason for the timeout"
+)
+async def timeout(
+    interaction: discord.Interaction, 
+    user: discord.Member, 
+    minutes: int, 
+    reason: str = "No reason provided"
+):
+    # 1. Sprawdzenie uprawnień moderatora
+    if not interaction.user.guild_permissions.moderate_members:
+        embed_no_perm = discord.Embed(
+            title="❌ Permission Denied",
+            description="You need the **Timeout Members** (`moderate_members`) permission to use this command.",
+            color=discord.Color.red()
+        )
+        await interaction.response.send_message(embed=embed_no_perm, ephemeral=True)
+        return
 
-    user_id = interaction.user.id
+    # 2. Zabezpieczenie przed timeoutowaniem botów
+    if user.bot:
+        await interaction.response.send_message("⚠️ You cannot timeout bot accounts.", ephemeral=True)
+        return
 
-    # 💰 TUTAJ DEFINIUJESZ ILOŚĆ MONET DLA UŻYTKOWNIKA
-    custom_reward = 100
+    # 3. Zabezpieczenie przed nałożeniem kary na samego siebie
+    if user.id == interaction.user.id:
+        await interaction.response.send_message("⚠️ You cannot timeout yourself!", ephemeral=True)
+        return
 
-    # Definiujemy ścieżkę do bazy
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    db_path = os.path.join(base_dir, "volt.db")
+    # 4. Sprawdzenie hierarchii ról (Zabezpieczenie przed wyciszaniem wyższych rangą)
+    if interaction.user.top_role <= user.top_role and interaction.guild.owner_id != interaction.user.id:
+        embed_hierarchy = discord.Embed(
+            title="⚠️ Hierarchy Error",
+            description="You cannot timeout this member because they have an equal or higher role than you.",
+            color=discord.Color.orange()
+        )
+        await interaction.response.send_message(embed=embed_hierarchy, ephemeral=True)
+        return
 
-    # Otwieramy połączenie z timeoutem, żeby wątki na siebie nie czekały
-    conn = sqlite3.connect(db_path, timeout=10)
-    cursor = conn.cursor()
+    # Deferujemy odpowiedź, bo operacja wysyłania żądania do Discord API może chwilę zająć
+    await interaction.response.defer(ephemeral=False)
 
     try:
-        # Szukamy użytkownika w bazie (sprawdzamy tekst i liczbę dla pewności)
-        cursor.execute(
-            "SELECT balance, last_daily, streak FROM economy WHERE user_id = ? OR user_id = ?",
-            (int(user_id), str(user_id)),
+        # 5. Nakładamy timeout za pomocą timedelta (Wymaga: from datetime import timedelta)
+        duration = timedelta(minutes=minutes)
+        await user.timeout(duration, reason=reason)
+
+        # 6. Obliczamy, kiedy dokładnie kara dobiegnie końca, do dynamicznego timestampu
+        # datetime.utcnow() jest przestarzałe w nowszych Pythonach, używamy timestampu z time.time()
+        import time
+        unmute_timestamp = int(time.time()) + (minutes * 60)
+        discord_time_relative = f"<t:{unmute_timestamp}:R>" # Np. "za 30 minut"
+        discord_time_full = f"<t:{unmute_timestamp}:F>"     # Dokładna data i godzina
+
+        # 7. Budujemy profesjonalny log modowski w Embedzie
+        embed_success = discord.Embed(
+            title="🤫 Member Timouted",
+            description=f"{user.mention} has been successfully isolated.",
+            color=discord.Color.red()
         )
+        embed_success.add_field(name="👤 Target", value=f"{user.mention} (`{user.id}`)", inline=True)
+        embed_success.add_field(name="🛡️ Moderator", value=interaction.user.mention, inline=True)
+        embed_success.add_field(name="⏳ Duration", value=f"`{minutes} Minute(s)`", inline=False)
+        embed_success.add_field(name="🔓 Unmute Time", value=f"{discord_time_full} ({discord_time_relative})", inline=False)
+        embed_success.add_field(name="📝 Reason", value=reason, inline=False)
+        embed_success.set_thumbnail(url=user.display_avatar.url)
+        embed_success.set_footer(text="VoltBot Moderation Core", icon_url=bot.user.display_avatar.url)
+
+        await interaction.followup.send(embed=embed_success)
+
+    except discord.Forbidden:
+        # Wywoła się, gdy bot ma w hierarchii ról na serwerze niższą rolę niż cel, lub brak uprawnień administracyjnych
+        embed_forbidden = discord.Embed(
+            title="❌ Action Failed",
+            description=(
+                f"I cannot timeout {user.mention}.\n"
+                f"Make sure my **VoltBot** role is placed **higher** than their highest role in the Server Settings."
+            ),
+            color=discord.Color.red()
+        )
+        await interaction.followup.send(embed=embed_forbidden, ephemeral=True)
+        
+    except Exception as e:
+        print(f"❌ [TIMEOUT ERROR] {e}")
+        await interaction.followup.send(f"❌ An unexpected error occurred: `{e}`", ephemeral=True)
+
+def get_user_balance_and_rank(user_id: int) -> tuple[int, int]:
+    """Zwraca krotkę (stan_konta, pozycja_w_rankingu) dla danego użytkownika."""
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    db_path = os.path.join(base_dir, "volt.db")
+    
+    conn = sqlite3.connect(db_path, timeout=10)
+    cursor = conn.cursor()
+    
+    try:
+        # 1. Pobieramy stan konta
+        cursor.execute("SELECT balance FROM economy WHERE user_id = ?", (user_id,))
         row = cursor.fetchone()
+        balance = row[0] if row else 0
+        
+        # Jeśli użytkownika nie ma jeszcze w bazie, opcjonalnie możesz go tu dodać,
+        # ale na razie zwracamy po prostu 0, a pozycja w rankingu policzy się automatycznie.
+        
+        # 2. Obliczamy pozycję w rankingu (Twój świetny patent!)
+        cursor.execute("SELECT COUNT(*) + 1 FROM economy WHERE balance > ?", (balance,))
+        rank = cursor.fetchone()[0]
+        
+        return balance, rank
+    finally:
+        conn.close()
 
-        now = int(time.time())
-        cooldown = 86400  # 24 godziny w sekundach
+@bot.tree.command(name="balance", description="Check your current coin balance and leaderboard standings")
+@premium_only() # Komenda zabezpieczona Twoim nowym dekoratorem Premium!
+@app_commands.describe(user="Select a member to check their balance (Leave blank to check your own)")
+async def balance(interaction: discord.Interaction, user: discord.Member = None):
+    # Deferujemy odpowiedź, ponieważ operacje na pliku bazy danych mogą zająć chwilę
+    await interaction.response.defer(ephemeral=False)
 
-        if row:
-            balance, last_daily, streak = row
+    # Jeśli parametr 'user' jest pusty, sprawdzamy osobę, która wywołała komendę
+    target_user = user or interaction.user
 
-            # 1. Sprawdzenie czasu (Cooldown)
-            if last_daily and now - last_daily < cooldown:
-                remaining = cooldown - (now - last_daily)
-                hours = remaining // 3600
-                minutes = (remaining % 3600) // 60
+    try:
+        # Wywołujemy bezpiecznie funkcję bazodanową w osobnym wątku, żeby nie zamrażać bota
+        balance_amount, leaderboard_rank = await asyncio.to_thread(
+            get_user_balance_and_rank, target_user.id
+        )
 
-                conn.close()  # Zamykamy połączenie przed wyjściem!
-                await interaction.followup.send(
-                    f"You already claimed daily!\nTry again in **{hours}h {minutes}m**",
-                    ephemeral=True,
-                )
-                return
-
-            # 2. Sprawdzenie streaku (czy minęło mniej niż 48h od ostatniego odebrania)
-            if last_daily and now - last_daily <= cooldown * 2:
-                streak += 1
-            else:
-                streak = 1
-
-            reward = custom_reward
-            new_balance = balance + reward
-
-            # Aktualizacja danych w bazie
-            cursor.execute(
-                """
-                UPDATE economy
-                SET balance = ?, last_daily = ?, streak = ?
-                WHERE user_id = ? OR user_id = ?
-            """,
-                (new_balance, now, streak, int(user_id), str(user_id)),
-            )
-
-        else:
-            # Nowy użytkownik w systemie ekonomii bota
-            streak = 1
-            reward = custom_reward
-            new_balance = reward
-
-            # Dodanie nowego wpisu
-            cursor.execute(
-                """
-                INSERT INTO economy (user_id, balance, last_daily, streak)
-                VALUES (?, ?, ?, ?)
-            """,
-                (int(user_id), new_balance, now, streak),
-            )
-
-        # Zatwierdzamy zmiany w bazie danych
-        conn.commit()
-
-        # Wysyłamy piękny embed z nagrodą do użytkownika
+        # Budujemy nowoczesny, złoty Embed w stylu Volt Economy
         embed = discord.Embed(
-            title="Daily Reward",
-            description=f"+{reward} coins\nStreak: {streak} 🔥",
-            color=discord.Color.green(),
+            title=f"💰 {target_user.name}'s Wallet",
+            color=discord.Color.gold()
+        )
+        
+        # Jeśli sprawdzamy bota, dodajemy mały smaczek (boty zazwyczaj nie mają kasy)
+        if target_user.bot:
+            embed.description = "🤖 *Bots carry digital wallets, but they are usually empty...*"
+
+        # Poukładane dane w czytelne kolumny
+        embed.add_field(
+            name="💵 Balance", 
+            value=f"**{balance_amount:,}** Volt Coins", # Formatowanie 1,000,000 działa automatycznie
+            inline=True
         )
         embed.add_field(
-            name="Balance", value=f"{new_balance:,} coins", inline=False
+            name="🏆 Global Rank", 
+            value=f"**#{leaderboard_rank}**", 
+            inline=True
+        )
+        
+        # Ustawiamy awatar sprawdzanego użytkownika jako miniaturkę
+        embed.set_thumbnail(url=target_user.display_avatar.url)
+        
+        # Ładne stopki z ikonką wykonawcy komendy
+        embed.set_footer(
+            text=f"Requested by {interaction.user.name} • Volt Economy", 
+            icon_url=interaction.user.display_avatar.url
         )
 
         await interaction.followup.send(embed=embed)
 
-    except Exception as error:
-        # JEŚLI COŚ SIĘ WYWALI W BAZIE, BOT NIE BĘDZIE WISIAŁ, TYLKO WYPLUJE BŁĄD!
-        print(f"🔴 [CRITICAL ERROR IN /DAILY]: {error}")
+    except Exception as e:
+        print(f"❌ [BALANCE CMD ERROR] {e}")
         await interaction.followup.send(
-            f"❌ An error occurred while executing the command: `{error}`",
-            ephemeral=True,
+            f"❌ An error occurred while fetching the wallet data: `{e}`", 
+            ephemeral=True
         )
 
+def process_daily_reward(user_id: int, custom_reward: int) -> tuple[str, dict]:
+    """Przetwarza nagrodę daily i zwraca status ('cooldown', 'success', 'error') oraz dane."""
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    db_path = os.path.join(base_dir, "volt.db")
+    
+    conn = sqlite3.connect(db_path, timeout=10)
+    cursor = conn.cursor()
+    
+    now = int(time.time())
+    cooldown = 86400  # 24 godziny
+    
+    try:
+        cursor.execute("SELECT balance, last_daily, streak FROM economy WHERE user_id = ?", (user_id,))
+        row = cursor.fetchone()
+        
+        if row:
+            balance, last_daily, streak = row
+            
+            # 1. Sprawdzenie czasu oczekiwania
+            if last_daily and (now - last_daily) < cooldown:
+                unlocked_at = last_daily + cooldown
+                return "cooldown", {"unlocked_at": unlocked_at}
+            
+            # 2. Sprawdzenie zachowania streaku (czy minęło mniej niż 48h od ostatniego odebrania)
+            if last_daily and (now - last_daily) <= (cooldown * 2):
+                streak += 1
+            else:
+                streak = 1
+                
+            new_balance = balance + custom_reward
+            cursor.execute(
+                "UPDATE economy SET balance = ?, last_daily = ?, streak = ? WHERE user_id = ?",
+                (new_balance, now, streak, user_id)
+            )
+        else:
+            # Nowy gracz w bazie
+            streak = 1
+            new_balance = custom_reward
+            cursor.execute(
+                "INSERT INTO economy (user_id, balance, last_daily, streak) VALUES (?, ?, ?, ?)",
+                (user_id, new_balance, now, streak)
+            )
+            
+        conn.commit()
+        return "success", {"reward": custom_reward, "balance": new_balance, "streak": streak}
+        
+    except Exception as e:
+        print(f"🔴 [DB DAILY ERROR]: {e}")
+        return "error", {"error_msg": str(e)}
     finally:
-        # Ten blok wykona się ZAWSZE, gwarantując zamknięcie bazy danych
         conn.close()
+
+
+# --- KOMENDA SLASH /DAILY ---
+@bot.tree.command(name="daily", description="Claim your daily allowance of Volt Coins")
+@premium_only()
+async def daily(interaction: discord.Interaction):
+    # Informujemy Discord, że przetwarzamy dane
+    await interaction.response.defer(ephemeral=False)
+    
+    user_id = interaction.user.id
+    custom_reward = 100  # Podstawowa nagroda finansowa
+    
+    # Odpalamy całą logikę bazy danych w osobnym bezpiecznym wątku
+    status, data = await asyncio.to_thread(process_daily_reward, user_id, custom_reward)
+    
+    if status == "cooldown":
+        unlocked_timestamp = data["unlocked_at"]
+        embed_cooldown = discord.Embed(
+            title="⏳ Reward Locked",
+            description=(
+                f"You have already claimed your daily reward today!\n"
+                f"Your next allowance is available **<t:{unlocked_timestamp}:R>** (at <t:{unlocked_timestamp}:t>)."
+            ),
+            color=discord.Color.red()
+        )
+        embed_cooldown.set_footer(text="VoltBot Economy Module")
+        await interaction.followup.send(embed=embed_cooldown, ephemeral=True)
+        return
+        
+    elif status == "error":
+        await interaction.followup.send(
+            f"❌ An error occurred while accessing the vault: `{data['error_msg']}`", 
+            ephemeral=True
+        )
+        return
+        
+    # Status: Success - Generujemy piękny panel nagrody
+    streak = data["streak"]
+    reward = data["reward"]
+    new_balance = data["balance"]
+    
+    # Mały bonus wizualny: co każde 5 dni streaku dodajemy ognistą animację w tekście
+    streak_display = f"`{streak} Day(s)`" + (" 🔥" if streak >= 5 else " ⚡")
+
+    embed_success = discord.Embed(
+        title="🎁 Daily Reward Claimed!",
+        description=f"You successfully collected your daily stimulus package.",
+        color=discord.Color.green()
+    )
+    embed_success.add_field(name="💰 Added", value=f"**+{reward}** Volt Coins", inline=True)
+    embed_success.add_field(name="📈 Streak", value=streak_display, inline=True)
+    embed_success.add_field(name="💳 Total Net Worth", value=f"**{new_balance:,}** coins", inline=False)
+    
+    embed_success.set_thumbnail(url=interaction.user.display_avatar.url)
+    embed_success.set_footer(
+        text=f"Claimed by {interaction.user.name} • Come back tomorrow!", 
+        icon_url=interaction.user.display_avatar.url
+    )
+    
+    await interaction.followup.send(embed=embed_success)
     
 @bot.tree.command(name="work", description="Earn coins by working")
 @premium_only()
