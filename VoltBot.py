@@ -206,40 +206,25 @@ def init_subs_db():
 # Wywołaj tę funkcję przy starcie bota:
 init_subs_db()
 
-def check_premium_db(user_id):
-
-    PREMIUM_USERS = [1490030330084720892]
-
-    if int(user_id) in PREMIUM_USERS:
-        return True
-
+def check_premium_db(guild_id: int) -> bool:
+    """Sprawdza, czy serwer ma aktywną i niewygasłą licencję Premium."""
     base_dir = os.path.dirname(os.path.abspath(__file__))
     db_path = os.path.join(base_dir, "volt.db")
-
-    if not os.path.exists(db_path):
-        return False
-
-    conn = sqlite3.connect(db_path, timeout=10)
+    
+    conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     current_time = int(time.time())
-
-    try:
-        # Dokładnie to zapytanie, które u Ciebie działa w systemie licencji
-        cursor.execute(
-            "SELECT expires_at FROM licenses WHERE used_by_user_id = ? AND is_used = 1",
-            (str(user_id),),
-        )
-        row = cursor.fetchone()
-
-        if row and row[0] is not None:
-            if int(row[0]) > current_time:
-                conn.close()
-                return True
-    except Exception as e:
-        print(f"❌ [DB ERROR] check_premium_db error: {e}")
-
+    
+    # Szukamy licencji przypisanej do tego serwera, która jeszcze NIE wygasła
+    cursor.execute("""
+        SELECT 1 FROM licenses 
+        WHERE is_used = 1 AND used_by_id = ? AND expires_at > ?
+    """, (str(guild_id), current_time))
+    
+    row = cursor.fetchone()
     conn.close()
-    return False
+    
+    return row is not None
 
 def check_premium_db(user_id):
     base_dir = os.path.dirname(os.path.abspath(__file__))
@@ -323,14 +308,12 @@ app = FastAPI()
 
 def premium_only():
     async def predicate(interaction: discord.Interaction) -> bool:
-        # Zmiana z user.id na guild.id, aby sprawdzać licencję dla serwera
         guild_id = interaction.guild_id
-        
         if not guild_id:
             await interaction.response.send_message("❌ This command cannot be used in DMs.", ephemeral=True)
             return False
 
-        # Sprawdzamy serwer w bazie danych
+        # Sprawdzamy stan licencji w osobnym wątku
         has_premium = await asyncio.to_thread(check_premium_db, guild_id)
         
         if not has_premium:
@@ -2010,54 +1993,49 @@ async def leaderboard(interaction: discord.Interaction):
     await interaction.followup.send(embed=embed)
 
 
-YOUR_DISCORD_ID = 1490030330084720892  # Twoje poprawne ID
+YOUR_DISCORD_ID = 1490030330084720892
 
 @bot.tree.command(name="license_generate", description="Generate a new license key (Admin only)")
 @app_commands.describe(days="How many days of subscription")
 async def license_generate(interaction: discord.Interaction, days: int):
-    # Sprawdzamy, czy to na pewno Ty
-    if interaction.user.id == YOUR_DISCORD_ID:
-        try:
-            # Generujemy bezpieczny, losowy klucz
-            raw_key = secrets.token_hex(6).upper()
-            license_key = f"VOLT-{raw_key[:4]}-{raw_key[4:8]}-{raw_key[8:12]}"
-            
-            # Próba zapisu do bazy danych
-            db_status = database.add_license_key(license_key, days)
-            
-            if db_status:
-                await interaction.response.send_message(
-                    f"**New license key generated!**\n`{license_key}` ({days} days)", 
-                    ephemeral=True
-                )
-            else:
-                await interaction.response.send_message(
-                    "Failed to generate key. Try again.", 
-                    ephemeral=True
-                )
-                
-        except Exception as error:
-            # Jeśli baza danych lub cokolwiek innego wywali błąd, bot natychmiast Ci go wyświetli
-            await interaction.response.send_message(
-                f"**Backend Error:** `{str(error)}`", 
-                ephemeral=True
-            )
-    else:
-        # Odpowiedź dla obcych użytkowników
-        await interaction.response.send_message(
-            "You do not have permission to use this command.", 
-            ephemeral=True
-        )
+    if interaction.user.id != YOUR_DISCORD_ID:
+        await interaction.response.send_message("❌ You do not have permission to use this command.", ephemeral=True)
+        return
 
-@bot.tree.command(name="license_redeem", description="Activate your subscription key")
+    try:
+        raw_key = secrets.token_hex(6).upper()
+        license_key = f"VOLT-{raw_key[:4]}-{raw_key[4:8]}-{raw_key[8:12]}"
+        
+        # Zapis przez Twój moduł bazy danych
+        db_status = database.add_license_key(license_key, days)
+        
+        if db_status:
+            embed_key = discord.Embed(
+                title="🔑 New License Generated",
+                color=discord.Color.green()
+            )
+            embed_key.add_field(name="Key", value=f"`{license_key}`", inline=False)
+            embed_key.add_field(name="Duration", value=f"{days} Days", inline=True)
+            
+            await interaction.response.send_message(embed=embed_key, ephemeral=True)
+        else:
+            await interaction.response.send_message("❌ Failed to insert key into database.", ephemeral=True)
+            
+    except Exception as error:
+        await interaction.response.send_message(f"**Backend Error:** `{str(error)}`", ephemeral=True)
+
+@bot.tree.command(name="license_redeem", description="Activate your subscription key for this server")
 @app_commands.describe(key="Your license key (VOLT-XXXX-XXXX-XXXX)")
 async def license_redeem(interaction: discord.Interaction, key: str):
     await interaction.response.defer(ephemeral=True)
 
-    user_id = str(interaction.user.id)
+    if not interaction.guild_id:
+        await interaction.followup.send("❌ You can only redeem keys inside a server.", ephemeral=True)
+        return
+
+    guild_id = str(interaction.guild_id) # Przypisujemy licencję do serwera
     clean_key = key.strip()
 
-    # 🌟 GWARANCJA TRWAŁOŚCI: Bezpieczna, absolutna ścieżka do bazy
     base_dir = os.path.dirname(os.path.abspath(__file__))
     db_path = os.path.join(base_dir, "volt.db")
 
@@ -2065,7 +2043,7 @@ async def license_redeem(interaction: discord.Interaction, key: str):
     cursor = conn.cursor()
 
     try:
-        # 1. Sprawdzamy czy klucz istnieje
+        # Sprawdzamy czy klucz istnieje
         cursor.execute(
             "SELECT id, duration_days, is_used FROM licenses WHERE license_key = ?",
             (clean_key,),
@@ -2073,49 +2051,50 @@ async def license_redeem(interaction: discord.Interaction, key: str):
         row = cursor.fetchone()
 
         if not row:
-            conn.close()
-            await interaction.followup.send(
-                "❌ This license key does not exist.", ephemeral=True
-            )
+            await interaction.followup.send("❌ This license key does not exist.", ephemeral=True)
             return
 
         db_id, duration_days, is_used = row
 
         if is_used == 1:
-            conn.close()
-            await interaction.followup.send(
-                "❌ This license key has already been used.", ephemeral=True
-            )
+            await interaction.followup.send("❌ This license key has already been used.", ephemeral=True)
             return
 
-        # 2. Obliczamy czas wygaśnięcia
+        # Obliczamy czas wygaśnięcia
         seconds_to_add = int(duration_days) * 24 * 60 * 60
         expiry_timestamp = int(time.time()) + seconds_to_add
 
-        # 3. Zapisujemy przypisanie licencji do Twojego ID
+        # Zapisujemy użycie (Używamy kolumny used_by_id dla uniwersalności)
         cursor.execute(
             """
             UPDATE licenses 
-            SET is_used = 1, used_by_user_id = ?, expires_at = ? 
+            SET is_used = 1, used_by_id = ?, expires_at = ? 
             WHERE id = ?
         """,
-            (user_id, str(expiry_timestamp), db_id),
+            (guild_id, expiry_timestamp, db_id),
         )
 
         conn.commit()
-        await interaction.followup.send(
-            "✅ License activated successfully! Thank you for your purchase.",
-            ephemeral=True,
+        
+        # Piękny Embed z potwierdzeniem sukcesu
+        embed_success = discord.Embed(
+            title="⚡ Volt Premium Activated!",
+            description=f"Automated systems have successfully applied your license to **{interaction.guild.name}**.",
+            color=0x00fff0
         )
+        embed_success.add_field(name="📅 Duration", value=f"`{duration_days} Days`", inline=True)
+        embed_success.add_field(name="🔒 Status", value="Active 👑", inline=True)
+        embed_success.set_footer(text="Thank you for supporting VoltBot!")
+        
+        await interaction.followup.send(embed=embed_success, ephemeral=True)
 
     except Exception as e:
         print(f"❌ [LICENSE ERROR] Something went wrong: {e}")
-        await interaction.followup.send(
-            f"❌ Database error during activation: `{e}`", ephemeral=True
-        )
+        await interaction.followup.send(f"❌ Database error during activation: `{e}`", ephemeral=True)
 
     finally:
         conn.close()
+        
 @bot.tree.command(name="license_check", description="Check your subscription status")
 async def license_check(interaction: discord.Interaction):
     user_id = str(interaction.user.id)
