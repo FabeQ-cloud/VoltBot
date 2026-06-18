@@ -1931,7 +1931,6 @@ def process_coin_transfer(sender_id: int, receiver_id: int, amount: int) -> tupl
     cursor = conn.cursor()
     
     try:
-        # Rozpoczynamy transakcję
         cursor.execute("BEGIN TRANSACTION;")
         
         cursor.execute("INSERT OR IGNORE INTO economy (user_id, balance, last_daily, streak) VALUES (?, 0, 0, 0)", (sender_id,))
@@ -1956,7 +1955,7 @@ def process_coin_transfer(sender_id: int, receiver_id: int, amount: int) -> tupl
         return "error", str(e)
         
     finally:
-        conn.close()
+        conn.close() # <- Ta linia MUSI tu być, żeby zamknąć blok powyżej!
 
 @bot.tree.command(name="pay", description="Transfer a specific amount of Volt Coins to another server member")
 @premium_only()
