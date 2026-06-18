@@ -543,11 +543,30 @@ user_msg_times = collections.defaultdict(list)
 MSG_LIMIT = 5
 TIME_WINDOW = 3
 
-@bot.tree.command(name="ping", description="Check bot latency")
+@bot.tree.command(name="ping", description="Check the bot's current latency and status")
 async def ping(interaction: discord.Interaction):
+    # Obliczamy opóźnienie w milisekundach
     latency = round(bot.latency * 1000)
-    await interaction.response.send_message(f"Pong! {latency} ms")
+    
+    if latency < 100:
+        status_color = discord.Color.from_rgb(0, 255, 240)
+        status_text = "🟢 Excellent (Good connection)"
+    elif latency < 250:
+        status_color = discord.Color.gold()
+        status_text = "🟡 Average (Slight delay)"
+    else:
+        status_color = discord.Color.red()
+        status_text = "🔴 Poor (High latency)"
 
+    embed = discord.Embed(
+        title="⚡ VoltBot Latency Status",
+        color=status_color
+    )
+    embed.add_field(name="📶 Connection Speed", value=f"`{latency} ms`", inline=True)
+    embed.add_field(name="📊 Bot Status", value=status_text, inline=True)
+    embed.set_footer(text=f"Requested by {interaction.user.name}", icon_url=interaction.user.display_avatar.url)
+
+    await interaction.response.send_message(embed=embed)
 @bot.tree.command(name="help", description="Show all commands")
 async def help(interaction: discord.Interaction):
 
@@ -871,34 +890,85 @@ async def check_punishment(member: discord.Member, warn_count: int):
 
     return "Banned for 24h"
 
-@bot.tree.command(name="ticket", description="Open ticket panel")
+@bot.tree.command(name="ticket", description="Deploy the premium support ticket panel")
 @premium_only()
 async def ticket(interaction: discord.Interaction):
+    # Tworzymy zaawansowany, czysty wizualnie Embed dla wersji Premium
     embed = discord.Embed(
-        title="Support Tickets",
-        description="Click a button below to open a ticket.",
-        color=0x00ffcc
+        title="🎫 Support & Assistance Hub",
+        description=(
+            "Need help? You are in the right place! Click the button below "
+            "to open a private support channel with the server administration.\n\n"
+            "**⚙️ Before opening a ticket:**\n"
+            "• Please be patient, staff will assist you shortly.\n"
+            "• Provide as many details about your issue as possible.\n"
+            "• Do not ping staff members immediately after opening."
+        ),
+        color=0x00ffcc # Twój flagowy neonowy błękit
     )
+    
+    # Dodajemy profesjonalne sekcje informacyjne
+    embed.add_field(
+        name="🔒 Secure Channel", 
+        value="Every ticket creates a private room visible only to you and the support team.", 
+        inline=False
+    )
+    
+    # Elegancka stopka systemowa
+    embed.set_footer(
+        text=f"Powered by VoltBot Premium • {interaction.guild.name}", 
+        icon_url=interaction.guild.icon.url if interaction.guild.icon else None
+    )
+
+    # Informujemy admina w ukrytej wiadomości, że panel został pomyślnie wysłany
     await interaction.response.send_message(
-        embed=embed,
-        view=TicketView(), 
-        ephemeral=False
+        "✅ **Success!** Premium Ticket Panel has been deployed successfully.", 
+        ephemeral=True
     )
 
-@bot.tree.command(name="close", description="Close this ticket")
-async def close(interaction: discord.Interaction):
+    # Wysyłamy właściwy panel na kanał (bez ephemeral, żeby wszyscy widzieli)
+    await interaction.channel.send(
+        embed=embed,
+        view=TicketView()
+    )
 
+@bot.tree.command(name="close", description="Close and delete this ticket channel safely")
+async def close(interaction: discord.Interaction):
     channel = interaction.channel
 
+    # Bezpieczeństwo: Sprawdzamy, czy to na pewno kanał ticketowy
     if "ticket-" not in channel.name:
-        await interaction.response.send_message(
-            "This is not a ticket channel.",
-            ephemeral=True
+        embed_error = discord.Embed(
+            title="❌ Action Denied",
+            description="This command can only be executed inside an active ticket channel.",
+            color=discord.Color.red()
         )
+        await interaction.response.send_message(embed=embed_error, ephemeral=True)
         return
 
-    await interaction.response.send_message("Closing ticket...")
-    await channel.delete()
+    # Tworzymy profesjonalny Embed informujący o zamykaniu ticketu
+    embed_close = discord.Embed(
+        title="🔒 Closing Ticket",
+        description=(
+            f"This ticket has been marked as completed by **{interaction.user.mention}**.\n"
+            "This channel will be permanently deleted in **5 seconds**."
+        ),
+        color=discord.Color.orange()
+    )
+    embed_close.set_footer(text="VoltBot Ticket System • Safe Deletion")
+
+    # Wysyłamy informację na kanale (nie jako ephemeral, żeby użytkownik też widział)
+    await interaction.response.send_message(embed=embed_close)
+
+    # Odliczanie 5 sekund (daje czas na przeczytanie i ewentualną reakcję)
+    await asyncio.sleep(5)
+
+    # Ostateczne usunięcie kanału
+    try:
+        await channel.delete()
+    except discord.Forbidden:
+        # Na wypadek, gdyby bot stracił uprawnienia w międzyczasie
+        print(f"Error: Missing permissions to delete channel {channel.name}")
     
 @bot.tree.command(name="clear", description="Delete messages")
 @app_commands.describe(amount="How many messages to delete")
