@@ -631,9 +631,6 @@ async def help(interaction: discord.Interaction):
         value=(
             "`/rank` • Display your current level status card\n"
             "`/stats` • Detailed XP and leveling breakdown\n"
-            "`/setwelcomechannel` • Set the server welcome log channel\n"
-            "`/setleavechannel` • Set the server farewell log channel\n"
-            "`👑 /setlevelreward` • Configure role rewards for milestones **[Premium]**"
         ),
         inline=False
     )
