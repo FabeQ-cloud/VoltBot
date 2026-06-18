@@ -320,16 +320,23 @@ def is_premium(user_id: int) -> bool:
     return False
 
 app = FastAPI()
+
 def premium_only():
     async def predicate(interaction: discord.Interaction) -> bool:
-        user_id = interaction.user.id
-        # Sprawdzamy w osobnym wątku
-        has_premium = await asyncio.to_thread(check_premium_db, user_id)
+        # Zmiana z user.id na guild.id, aby sprawdzać licencję dla serwera
+        guild_id = interaction.guild_id
+        
+        if not guild_id:
+            await interaction.response.send_message("❌ This command cannot be used in DMs.", ephemeral=True)
+            return False
+
+        # Sprawdzamy serwer w bazie danych
+        has_premium = await asyncio.to_thread(check_premium_db, guild_id)
         
         if not has_premium:
             await interaction.response.send_message(
                 "❌ **This feature requires Volt Premium!**\n"
-                "Please enter a valid license key using `/redeem` or visit our store.",
+                "Please enter a valid license key using `/license_redeem` or visit our store.",
                 ephemeral=True
             )
             return False
