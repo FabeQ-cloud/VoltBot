@@ -1089,89 +1089,223 @@ async def kick(interaction: discord.Interaction, user: discord.Member, reason: s
         print(f"❌ [KICK ERROR] {e}")
         await interaction.followup.send(f"❌ An error occurred: `{e}`", ephemeral=True)
         
-@bot.tree.command(name="ban", description="Ban a user")
-@app_commands.describe(user="User to ban", reason="Reason")
-async def ban(interaction: discord.Interaction, user: discord.Member, reason: str = "No reason"):
-
-    if not interaction.user.guild_permissions.ban_members:
-        await interaction.response.send_message("No permission!", ephemeral=True)
-        return
-    
-    await user.ban(reason=reason)
-
-    await interaction.response.send_message(
-        f"{user} banned, Reason: {reason}"
-    )
-
-@bot.tree.command(name="warn", description="Warn a user")
+@bot.tree.command(name="ban", description="Permanently ban a member from the server")
 @app_commands.describe(
-    user="User to warn",
-    reason="Reason for warning"
+    user="The member to ban", 
+    reason="The reason for the ban",
+    delete_days="Delete user's message history from the last X days"
 )
-async def warn(
-    interaction: discord.Interaction,
-    user: discord.Member,
-    reason: str
+@app_commands.choices(delete_days=[
+    app_commands.Choice(name="Don't delete any", value=0),
+    app_commands.Choice(name="Previous 24 hours", value=1),
+    app_commands.Choice(name="Previous 7 days", value=7)
+])
+async def ban(
+    interaction: discord.Interaction, 
+    user: discord.Member, 
+    reason: str = "No reason provided",
+    delete_days: int = 0
 ):
+    # 1. Sprawdzenie uprawnień moderatora
+    if not interaction.user.guild_permissions.ban_members:
+        embed_no_perm = discord.Embed(
+            title="❌ Permission Denied",
+            description="You need the **Ban Members** permission to use this command.",
+            color=discord.Color.red()
+        )
+        await interaction.response.send_message(embed=embed_no_perm, ephemeral=True)
+        return
 
+    # 2. Zabezpieczenie przed zbanowaniem samego siebie
+    if user.id == interaction.user.id:
+        embed_self = discord.Embed(
+            title="⚠️ Action Denied",
+            description="You cannot ban yourself!",
+            color=discord.Color.orange()
+        )
+        await interaction.response.send_message(embed=embed_self, ephemeral=True)
+        return
+
+    # 3. Sprawdzenie hierarchii ról (Czy moderator stoi wyżej niż cel)
+    if interaction.user.top_role <= user.top_role and interaction.guild.owner_id != interaction.user.id:
+        embed_hierarchy = discord.Embed(
+            title="⚠️ Hierarchy Error",
+            description="You cannot ban this member because they have an equal or higher role than you.",
+            color=discord.Color.orange()
+        )
+        await interaction.response.send_message(embed=embed_hierarchy, ephemeral=True)
+        return
+
+    # 4. Sprawdzenie czy bot stoi wystarczająco wysoko w rolach
+    bot_member = interaction.guild.me
+    if bot_member.top_role <= user.top_role:
+        embed_bot_hierarchy = discord.Embed(
+            title="⚠️ Bot Hierarchy Error",
+            description="I cannot ban this member because my highest role is lower than or equal to their highest role.",
+            color=discord.Color.orange()
+        )
+        await interaction.response.send_message(embed=embed_bot_hierarchy, ephemeral=True)
+        return
+
+    # Deferujemy, bo wysyłanie DM i czyszczenie wiadomości może zająć botu dłuższą chwilę
+    await interaction.response.defer(ephemeral=False)
+
+    # 5. Próba wysłania wiadomości prywatnej (DM) PRZED nałożeniem bana
+    try:
+        embed_dm = discord.Embed(
+            title="🔨 You have been banned",
+            description=f"You were permanently banned from **{interaction.guild.name}**.",
+            color=discord.Color.from_rgb(150, 0, 0)
+        )
+        embed_dm.add_field(name="📝 Reason", value=reason, inline=False)
+        embed_dm.set_footer(text="This ban is permanent unless appealed by the server administration.")
+        await user.send(embed=embed_dm)
+    except discord.Forbidden:
+        # Ignorujemy błąd, jeśli użytkownik ma zablokowane DM-y
+        pass
+
+    # 6. Wykonanie bana wraz z czyszczeniem historii wiadomości
+    try:
+        # Konwertujemy wybrane dni na sekundy dla parametru delete_message_seconds
+        delete_seconds = delete_days * 24 * 60 * 60
+        
+        await user.ban(
+            reason=f"Banned by {interaction.user} | Reason: {reason}",
+            delete_message_seconds=delete_seconds
+        )
+        
+        # Piękny Embed potwierdzający banicję na kanale
+        embed_success = discord.Embed(
+            title="💥 Member Permanently Banned",
+            color=discord.Color.from_rgb(180, 0, 0)
+        )
+        embed_success.add_field(name="👤 Target User", value=f"{user.mention} (`{user.id}`)", inline=True)
+        embed_success.add_field(name="🛡️ Moderator", value=interaction.user.mention, inline=True)
+        embed_success.add_field(name="🗑️ History Cleared", value=f"Last {delete_days} days", inline=True)
+        embed_success.add_field(name="📝 Reason", value=reason, inline=False)
+        embed_success.set_thumbnail(url=user.display_avatar.url)
+        embed_success.set_footer(text="VoltBot Moderation Suite • Permanent Punishment")
+        
+        await interaction.followup.send(embed=embed_success)
+
+    except discord.Forbidden:
+        await interaction.followup.send("❌ I don't have permission to ban this user. Verify my permissions in Server Settings.", ephemeral=True)
+    except Exception as e:
+        print(f"❌ [BAN ERROR] {e}")
+        await interaction.followup.send(f"❌ An error occurred: `{e}`", ephemeral=True)
+
+def add_warning_to_db(guild_id: int, user_id: int, reason: str) -> int:
+    """Zapisuje warna w parze serwer+użytkownik i zwraca aktualną liczbę ostrzeżeń."""
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    db_path = os.path.join(base_dir, "volt.db")
+    
+    conn = sqlite3.connect(db_path, timeout=10)
+    cursor = conn.cursor()
+    
+    try:
+        # Zapisujemy warn przypisany do konkretnego serwera (guild_id) i użytkownika (user_id)
+        cursor.execute(
+            "INSERT INTO warnings (guild_id, user_id, reason) VALUES (?, ?, ?)",
+            (str(guild_id), str(user_id), reason)
+        )
+        conn.commit()
+        
+        # Pobieramy sumę warnów tego użytkownika TYLKO na tym serwerze
+        cursor.execute(
+            "SELECT COUNT(*) FROM warnings WHERE guild_id = ? AND user_id = ?",
+            (str(guild_id), str(user_id))
+        )
+        warn_count = cursor.fetchone()[0]
+        return warn_count
+        
+    finally:
+        conn.close()
+
+
+# --- KOMENDA SLASH /WARN ---
+@bot.tree.command(name="warn", description="Issue a warning to a member")
+@app_commands.describe(user="The member to warn", reason="The reason for the warning")
+async def warn(interaction: discord.Interaction, user: discord.Member, reason: str):
+    # 1. Sprawdzenie uprawnień moderatora
     if not interaction.user.guild_permissions.kick_members:
-        await interaction.response.send_message(
-            "You don't have permission to warn users.",
-            ephemeral=True
+        embed_no_perm = discord.Embed(
+            title="❌ Permission Denied",
+            description="You need the **Kick Members** permission to use this command.",
+            color=discord.Color.red()
         )
+        await interaction.response.send_message(embed=embed_no_perm, ephemeral=True)
         return
 
+    # 2. Zabezpieczenie przed warnowaniem botów
     if user.bot:
-        await interaction.response.send_message(
-            "You cannot warn bots.",
-            ephemeral=True
+        embed_bot = discord.Embed(
+            title="⚠️ Action Denied",
+            description="You cannot issue warnings to bots.",
+            color=discord.Color.orange()
         )
+        await interaction.response.send_message(embed=bot, ephemeral=True)
         return
 
-    cursor.execute(
-        "INSERT INTO warnings (user_id, reason) VALUES (?, ?)",
-        (user.id, reason)
-    )
+    # 3. Zabezpieczenie przed warnowaniem samego siebie
+    if user.id == interaction.user.id:
+        embed_self = discord.Embed(
+            title="⚠️ Action Denied",
+            description="You cannot warn yourself!",
+            color=discord.Color.orange()
+        )
+        await interaction.response.send_message(embed=self, ephemeral=True)
+        return
 
-    conn.commit()
+    # 4. Sprawdzenie hierarchii ról (Zabezpieczenie przed warnowaniem adminów)
+    if interaction.user.top_role <= user.top_role and interaction.guild.owner_id != interaction.user.id:
+        embed_hierarchy = discord.Embed(
+            title="⚠️ Hierarchy Error",
+            description="You cannot warn this member because they have an equal or higher role than you.",
+            color=discord.Color.orange()
+        )
+        await interaction.response.send_message(embed=embed_hierarchy, ephemeral=True)
+        return
 
-    cursor.execute(
-        "SELECT COUNT(*) FROM warnings WHERE user_id = ?",
-        (user.id,)
-    )
+    # Deferujemy odpowiedź – operacje na bazie i DM mogą chwilę zająć
+    await interaction.response.defer(ephemeral=False)
 
-    warn_count = cursor.fetchone()[0]
+    # 5. Bezpieczne wykonanie operacji na bazie danych w osobnym wątku
+    guild_id = interaction.guild_id
+    try:
+        warn_count = await asyncio.to_thread(add_warning_to_db, guild_id, user.id, reason)
+    except sqlite3.OperationalError as db_err:
+        # Jeśli w bazie danych nie ma kolumny guild_id, obsłuż błąd
+        print(f"❌ [DB WARN ERROR] Może brakować kolumny guild_id w tabeli warnings: {db_err}")
+        await interaction.followup.send("❌ Database layout error. Inform bot owner.", ephemeral=True)
+        return
 
-    embed = discord.Embed(
-        title="User Warned",
+    # 6. Wysyłanie ostrzeżenia w wiadomości prywatnej (DM) do użytkownika
+    try:
+        embed_dm = discord.Embed(
+            title=f"⚠️ Warning Received in {interaction.guild.name}",
+            description=f"You have been formally warned by the server moderation team.",
+            color=discord.Color.orange()
+        )
+        embed_dm.add_field(name="📝 Reason", value=reason, inline=False)
+        embed_dm.add_field(name="📊 Total Warnings on this server", value=f"`{warn_count}`", inline=False)
+        embed_dm.set_footer(text="Please respect the server rules to avoid further punishments.")
+        await user.send(embed=embed_dm)
+    except discord.Forbidden:
+        pass # Ignorujemy jeśli użytkownik ma zamknięte DM-y
+
+    # 7. Wyświetlenie pięknego logu na kanale tekstowym
+    embed_success = discord.Embed(
+        title="⚠️ Member Warned",
         color=discord.Color.orange()
     )
+    embed_success.add_field(name="👤 Target", value=f"{user.mention} (`{user.id}`)", inline=True)
+    embed_success.add_field(name="🛡️ Moderator", value=interaction.user.mention, inline=True)
+    embed_success.add_field(name="📝 Reason", value=reason, inline=False)
+    embed_success.add_field(name="📊 Total Warnings", value=f"`{warn_count}`", inline=True)
+    embed_success.set_thumbnail(url=user.display_avatar.url)
+    embed_success.set_footer(text="VoltBot Moderation Suite")
 
-    embed.add_field(
-        name="User",
-        value=user.mention,
-        inline=True
-    )
-
-    embed.add_field(
-        name="Moderator",
-        value=interaction.user.mention,
-        inline=True
-    )
-
-    embed.add_field(
-        name="Reason",
-        value=reason,
-        inline=False
-    )
-
-    embed.add_field(
-        name="Total Warnings",
-        value=str(warn_count),
-        inline=False
-    )
-
-    await interaction.response.send_message(embed=embed)
+    await interaction.followup.send(embed=embed_success)
 
 @bot.tree.command(name="warnings", description="Check user warnings")
 @app_commands.describe(user="User to check")
