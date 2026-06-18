@@ -2259,8 +2259,10 @@ async def rank(interaction: discord.Interaction, user: discord.Member = None):
     except Exception as e:
         print(f"❌ [RANK CMD ERROR] {e}")
         await interaction.followup.send(f"❌ Error while generating statistics: `{e}`", ephemeral=True)
-def get_user_rank_data(user_id: int) -> tuple[int, int] | None:
-    """Pobiera (xp, level) dla użytkownika. Zwraca None, jeśli użytkownik nie ma jeszcze danych."""
+
+
+def get_top_xp_data(limit: int = 10) -> list[tuple[int, int, int]]:
+    """Pobiera z bazy danych TOP 10 użytkowników z najwyższym poziomem i XP."""
     base_dir = os.path.dirname(os.path.abspath(__file__))
     db_path = os.path.join(base_dir, "volt.db")
     
@@ -2268,8 +2270,19 @@ def get_user_rank_data(user_id: int) -> tuple[int, int] | None:
     cursor = conn.cursor()
     
     try:
-        cursor.execute("SELECT xp, level FROM levels WHERE user_id = ?", (user_id,))
-        return cursor.fetchone()
+        # Sortujemy najpierw po poziomie (desc), a potem po dodatkowym XP (desc)
+        cursor.execute("""
+            SELECT user_id, level, xp 
+            FROM levels 
+            ORDER BY level DESC, xp DESC 
+            LIMIT ?
+        """, (limit,))
+        
+        return cursor.fetchall()
+        
+    except Exception as e:
+        print(f"🔴 [DB TOPXP ERROR]: {e}")
+        return []
     finally:
         conn.close()
 
