@@ -183,6 +183,14 @@ def init_db():
             expires_at INTEGER
         )
     """)
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS welcome_config (
+            guild_id TEXT PRIMARY KEY,
+            welcome_channel TEXT,
+            leave_channel TEXT
+        );
+    """)
     
     # 3. Tabela: Ostrzeżenia (Wersja bezpieczna, wieloserwerowa)
     cursor.execute("""
@@ -206,10 +214,11 @@ def init_db():
     """)
 
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS levels (
-            user_id INTEGER PRIMARY KEY,
-            xp INTEGER DEFAULT 0,
-            level INTEGER DEFAULT 0
+        CREATE TABLE IF NOT EXISTS level_rewards (
+            guild_id TEXT NOT NULL,
+            level INTEGER NOT NULL,
+            role_id TEXT NOT NULL,
+            PRIMARY KEY (guild_id, level)
         );
     """)
     
@@ -2432,103 +2441,197 @@ async def coinflip(interaction: discord.Interaction, amount: int):
         await interaction.followup.send(embed=embed_lose)
 
 
+def update_welcome_channel(guild_id: int, channel_id: int) -> bool:
+    """Bezpiecznie zapisuje lub aktualizuje kanał powitalny dla serwera w tle."""
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    db_path = os.path.join(base_dir, "volt.db")
+    
+    conn = sqlite3.connect(db_path, timeout=10)
+    cursor = conn.cursor()
+    
+    try:
+        cursor.execute("""
+            INSERT INTO welcome_config (guild_id, welcome_channel)
+            VALUES (?, ?)
+            ON CONFLICT(guild_id)
+            DO UPDATE SET welcome_channel = excluded.welcome_channel
+        """, (str(guild_id), str(channel_id)))
+        
+        conn.commit()
+        return True
+    except Exception as e:
+        print(f"🔴 [DB WELCOME ERROR]: {e}")
+        return False
+    finally:
+        conn.close()
+
 @bot.tree.command(
     name="setwelcomechannel",
-    description="Set welcome channel"
+    description="Set the dedicated text channel for welcome messages"
 )
 async def setwelcomechannel(
     interaction: discord.Interaction,
     channel: discord.TextChannel
 ):
-
+    # Zabezpieczenie: Tylko administratorzy mogą konfigurować bota
     if not interaction.user.guild_permissions.administrator:
         await interaction.response.send_message(
-            "Administrator permission required.",
+            "❌ Administrator permission required to change system settings.",
             ephemeral=True
         )
         return
 
-    cursor.execute("""
-        INSERT INTO welcome_config
-        (guild_id, welcome_channel)
-        VALUES (?, ?)
-        ON CONFLICT(guild_id)
-        DO UPDATE SET welcome_channel = excluded.welcome_channel
-    """, (interaction.guild.id, channel.id))
+    # Deferujemy odpowiedź na wypadek opóźnień dyskowych na Renderze
+    await interaction.response.defer(ephemeral=False)
 
-    conn.commit()
+    guild_id = interaction.guild.id
+    channel_id = channel.id
 
-    await interaction.response.send_message(
-        f"Welcome channel set to {channel.mention}"
-    )
+    # Odpalamy zapis w bezpiecznym wątku
+    success = await asyncio.to_thread(update_welcome_channel, guild_id, channel_id)
+
+    if success:
+        await interaction.followup.send(
+            f"✨ **Success!** Welcome channel has been set to {channel.mention}"
+        )
+    else:
+        await interaction.followup.send(
+            "❌ Database error: Failed to save the welcome configuration.",
+            ephemeral=True
+        )
+
+def update_leave_channel(guild_id: int, channel_id: int) -> bool:
+    """Bezpiecznie zapisuje lub aktualizuje kanał pożegnalny dla serwera w tle."""
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    db_path = os.path.join(base_dir, "volt.db")
+    
+    conn = sqlite3.connect(db_path, timeout=10)
+    cursor = conn.cursor()
+    
+    try:
+        cursor.execute("""
+            INSERT INTO welcome_config (guild_id, leave_channel)
+            VALUES (?, ?)
+            ON CONFLICT(guild_id)
+            DO UPDATE SET leave_channel = excluded.leave_channel
+        """, (str(guild_id), str(channel_id)))
+        
+        conn.commit()
+        return True
+    except Exception as e:
+        print(f"🔴 [DB LEAVE ERROR]: {e}")
+        return False
+    finally:
+        conn.close()
 
 @bot.tree.command(
     name="setleavechannel",
-    description="Set leave channel"
+    description="Set the dedicated text channel for user leave/farewell messages"
 )
 async def setleavechannel(
     interaction: discord.Interaction,
     channel: discord.TextChannel
 ):
-
+    # Zabezpieczenie: Tylko administratorzy mogą zarządzać konfiguracją systemu
     if not interaction.user.guild_permissions.administrator:
         await interaction.response.send_message(
-            "Administrator permission required.",
+            "❌ Administrator permission required to change system settings.",
             ephemeral=True
         )
         return
 
-    cursor.execute("""
-        INSERT INTO welcome_config
-        (guild_id, leave_channel)
-        VALUES (?, ?)
-        ON CONFLICT(guild_id)
-        DO UPDATE SET leave_channel = excluded.leave_channel
-    """, (interaction.guild.id, channel.id))
+    # Deferujemy odpowiedź, chroniąc bota przed timeoutem API Discorda
+    await interaction.response.defer(ephemeral=False)
 
-    conn.commit()
+    guild_id = interaction.guild.id
+    channel_id = channel.id
 
-    await interaction.response.send_message(
-        f"Leave channel set to {channel.mention}"
-    )
+    # Uruchamiamy zapis w bezpiecznym, osobnym wątku systemowym
+    success = await asyncio.to_thread(update_leave_channel, guild_id, channel_id)
 
+    if success:
+        await interaction.followup.send(
+            f"✨ **Success!** Leave channel has been set to {channel.mention}"
+        )
+    else:
+        await interaction.followup.send(
+            "❌ Database error: Failed to save the leave configuration.",
+            ephemeral=True
+        )
+    
+def update_level_reward(guild_id: int, level: int, role_id: int) -> bool:
+    """Bezpiecznie zapisuje lub nadpisuje rolę nagrody za konkretny poziom w tle."""
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    db_path = os.path.join(base_dir, "volt.db")
+    
+    conn = sqlite3.connect(db_path, timeout=10)
+    cursor = conn.cursor()
+    
+    try:
+        # Dzięki ON CONFLICT, jeśli admin zmieni zdanie, stara rola zostanie nadpisana nową!
+        cursor.execute("""
+            INSERT INTO level_rewards (guild_id, level, role_id)
+            VALUES (?, ?, ?)
+            ON CONFLICT(guild_id, level)
+            DO UPDATE SET role_id = excluded.role_id
+        """, (str(guild_id), level, str(role_id)))
+        
+        conn.commit()
+        return True
+    except Exception as e:
+        print(f"🔴 [DB LEVEL REWARD ERROR]: {e}")
+        return False
+    finally:
+        conn.close()
 
 @bot.tree.command(
     name="setlevelreward",
-    description="Set a role reward for a level"
+    description="Set a role reward for reaching a specific level"
 )
-@premium_only()
+@premium_only() # Trzymamy komendę za bezpieczną barierą Premium!
+@app_commands.describe(
+    level="The level required to get the role",
+    role="The role to grant as a reward"
+)
 async def setlevelreward(
     interaction: discord.Interaction,
     level: int,
     role: discord.Role
 ):
-
+    # Zabezpieczenie: Tylko administratorzy serwera
     if not interaction.user.guild_permissions.administrator:
         await interaction.response.send_message(
-            "Administrator permission required.",
+            "❌ Administrator permission required to manage level rewards.",
             ephemeral=True
         )
         return
 
-    cursor.execute(
-        """
-        INSERT INTO level_rewards
-        (guild_id, level, role_id)
-        VALUES (?, ?, ?)
-        """,
-        (
-            interaction.guild.id,
-            level,
-            role.id
+    # Walidacja: Poziom nie może być zerem ani liczbą ujemną
+    if level <= 0:
+        await interaction.response.send_message(
+            "❌ Please specify a level greater than 0.",
+            ephemeral=True
         )
-    )
+        return
 
-    conn.commit()
+    # Deferujemy odpowiedź, zabezpieczając wątek główny bota przed zamrożeniem
+    await interaction.response.defer(ephemeral=False)
 
-    await interaction.response.send_message(
-        f"Reward set:\nLevel **{level}** → {role.mention}"
-    )
+    guild_id = interaction.guild.id
+    role_id = role.id
+
+    # Wywołujemy bezpieczny zapis w bazie danych w tle
+    success = await asyncio.to_thread(update_level_reward, guild_id, level, role_id)
+
+    if success:
+        await interaction.followup.send(
+            f"🎁 **Level Reward Configured!**\nWhen a user hits Level **{level}**, they will now receive: {role.mention}"
+        )
+    else:
+        await interaction.followup.send(
+            "❌ Database error: Failed to save the level reward configuration.",
+            ephemeral=True
+        )
  
 
 @bot.tree.command(name="license_add", description="Add premium license")
