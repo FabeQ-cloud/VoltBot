@@ -946,34 +946,149 @@ async def close(interaction: discord.Interaction):
         # Na wypadek, gdyby bot stracił uprawnienia w międzyczasie
         print(f"Error: Missing permissions to delete channel {channel.name}")
     
-@bot.tree.command(name="clear", description="Delete messages")
-@app_commands.describe(amount="How many messages to delete")
+@bot.tree.command(name="clear", description="Bulk delete a specified amount of messages from this channel")
+@app_commands.describe(amount="The number of messages to delete (Maximum: 100)")
 async def clear(interaction: discord.Interaction, amount: int):
-
+    # 1. Zabezpieczenie uprawnień użytkownika
     if not interaction.user.guild_permissions.manage_messages:
-        await interaction.response.send_message("No permission ", ephemeral=True)
+        embed_no_perm = discord.Embed(
+            title="❌ Permission Denied",
+            description="You need the **Manage Messages** permission to use this command.",
+            color=discord.Color.red()
+        )
+        await interaction.response.send_message(embed=embed_no_perm, ephemeral=True)
         return
 
+    # 2. Walidacja wprowadzonej liczby (Zabezpieczenie przed crashem)
+    if amount < 1 or amount > 100:
+        embed_invalid = discord.Embed(
+            title="⚠️ Invalid Amount",
+            description="You can only delete between **1 and 100** messages at a time.",
+            color=discord.Color.orange()
+        )
+        await interaction.response.send_message(embed=embed_invalid, ephemeral=True)
+        return
+
+    # Deferujemy odpowiedź jako ukrytą (ephemeral), żeby nie śmiecić na czyszczonym kanale
     await interaction.response.defer(ephemeral=True)
 
-    deleted = await interaction.channel.purge(limit=amount + 1)
+    try:
+        # 3. Wykonanie czyszczenia (Bez +1, bo komendy Slash nie tworzą fizycznej wiadomości użytkownika)
+        deleted = await interaction.channel.purge(limit=amount)
+        
+        # 4. Przygotowanie pięknego podsumowania w Embedzie
+        embed_success = discord.Embed(
+            title="🧹 Channel Cleaned",
+            color=0x00fff0 # Twój neonowy błękit VoltBota
+        )
+        embed_success.add_field(name="💬 Requested", value=f"`{amount}` messages", inline=True)
+        embed_success.add_field(name="🗑️ Successfully Deleted", value=f"`{len(deleted)}` messages", inline=True)
+        
+        # Małe ostrzeżenie, jeśli bot usunął mniej wiadomości niż żądano (np. przez barierę 14 dni)
+        if len(deleted) < amount:
+            embed_success.set_footer(text="Note: Messages older than 14 days cannot be deleted by Discord bots.")
+        else:
+            embed_success.set_footer(text=f"Moderator: {interaction.user.name}")
 
-    await interaction.followup.send(
-        f" Deleted {len(deleted)} messages"
-    )
-@bot.tree.command(name="kick", description="Kick a user")
-@app_commands.describe(user="User to kick", reason="Reason")
-async def kick(interaction: discord.Interaction, user: discord.Member, reason: str = "No reason" ):
+        # Wysyłamy ostateczne potwierdzenie
+        await interaction.followup.send(embed=embed_success, ephemeral=True)
 
+    except discord.Forbidden:
+        # Obsługa sytuacji, gdy bot nie ma uprawnień na tym konkretnym kanale
+        embed_err = discord.Embed(
+            title="❌ Bot Error",
+            description="I don't have permission to manage messages on this channel. Please check my server roles.",
+            color=discord.Color.red()
+        )
+        await interaction.followup.send(embed=embed_err, ephemeral=True)
+        
+    except Exception as e:
+        print(f"❌ [CLEAR ERROR] {e}")
+        await interaction.followup.send(f"❌ An unexpected error occurred: `{e}`", ephemeral=True)
+        
+@bot.tree.command(name="kick", description="Kick a member from the server")
+@app_commands.describe(user="The member to kick", reason="The reason for the kick")
+async def kick(interaction: discord.Interaction, user: discord.Member, reason: str = "No reason provided"):
+    # 1. Sprawdzenie uprawnień moderatora
     if not interaction.user.guild_permissions.kick_members:
-        await interaction.response.send_message("No permission!", ephemeral=True)
+        embed_no_perm = discord.Embed(
+            title="❌ Permission Denied",
+            description="You need the **Kick Members** permission to use this command.",
+            color=discord.Color.red()
+        )
+        await interaction.response.send_message(embed=embed_no_perm, ephemeral=True)
         return
-    
-    await user.kick(reason=reason)
 
-    await interaction.response.send_message(
-        f"{user} kicked, Reason: {reason}"
-    )
+    # 2. Zabezpieczenie przed wyrzuceniem samego siebie
+    if user.id == interaction.user.id:
+        embed_self = discord.Embed(
+            title="⚠️ Action Denied",
+            description="You cannot kick yourself!",
+            color=discord.Color.orange()
+        )
+        await interaction.response.send_message(embed=embed_self, ephemeral=True)
+        return
+
+    # 3. Sprawdzenie hierarchii ról (Czy moderator stoi wyżej niż cel)
+    if interaction.user.top_role <= user.top_role and interaction.guild.owner_id != interaction.user.id:
+        embed_hierarchy = discord.Embed(
+            title="⚠️ Hierarchy Error",
+            description="You cannot kick this member because they have an equal or higher role than you.",
+            color=discord.Color.orange()
+        )
+        await interaction.response.send_message(embed=embed_hierarchy, ephemeral=True)
+        return
+
+    # 4. Sprawdzenie czy bot stoi wystarczająco wysoko w rolach, by wyrzucić cel
+    bot_member = interaction.guild.me
+    if bot_member.top_role <= user.top_role:
+        embed_bot_hierarchy = discord.Embed(
+            title="⚠️ Bot Hierarchy Error",
+            description="I cannot kick this member because my highest role is lower than or equal to their highest role.",
+            color=discord.Color.orange()
+        )
+        await interaction.response.send_message(embed=bot_bot_hierarchy, ephemeral=True)
+        return
+
+    # Deferujemy odpowiedź, bo wysyłanie DM może chwilę potrwać
+    await interaction.response.defer(ephemeral=False)
+
+    # 5. Próba wysłania wiadomości prywatnej (DM) do użytkownika PRZED wyrzuceniem
+    try:
+        embed_dm = discord.Embed(
+            title=f"🚪 You were kicked from {interaction.guild.name}",
+            color=discord.Color.red()
+        )
+        embed_dm.add_field(name="💬 Reason", value=reason, inline=False)
+        embed_dm.set_footer(text="If you believe this was a mistake, please contact the server administration.")
+        await user.send(embed=embed_dm)
+    except discord.Forbidden:
+        # Użytkownik może mieć zablokowane DM-y od obcych, ignorujemy ten błąd i lecimy dalej
+        pass
+
+    # 6. Właściwa akcja wyrzucenia z serwera
+    try:
+        await user.kick(reason=f"Kicked by {interaction.user} | Reason: {reason}")
+        
+        # Piękny Embed potwierdzający akcję na kanale
+        embed_success = discord.Embed(
+            title="🔨 Member Kicked",
+            color=discord.Color.red()
+        )
+        embed_success.add_field(name="👤 Target", value=f"{user.mention} (`{user.id}`)", inline=True)
+        embed_success.add_field(name="🛡️ Moderator", value=interaction.user.mention, inline=True)
+        embed_success.add_field(name="📝 Reason", value=reason, inline=False)
+        embed_success.set_thumbnail(url=user.display_avatar.url)
+        embed_success.set_footer(text=f"VoltBot Moderation Suite")
+        
+        await interaction.followup.send(embed=embed_success)
+
+    except discord.Forbidden:
+        await interaction.followup.send("❌ I don't have permission to kick this user. Check my Discord permissions.", ephemeral=True)
+    except Exception as e:
+        print(f"❌ [KICK ERROR] {e}")
+        await interaction.followup.send(f"❌ An error occurred: `{e}`", ephemeral=True)
+        
 @bot.tree.command(name="ban", description="Ban a user")
 @app_commands.describe(user="User to ban", reason="Reason")
 async def ban(interaction: discord.Interaction, user: discord.Member, reason: str = "No reason"):
