@@ -2500,6 +2500,59 @@ async def setwelcomechannel(
             ephemeral=True
         )
 
+def get_welcome_channel_id(guild_id: int) -> int | None:
+    """Sprawdza w bazie danych, czy serwer ma skonfigurowany kanał powitalny."""
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    db_path = os.path.join(base_dir, "volt.db")
+    
+    conn = sqlite3.connect(db_path, timeout=10)
+    cursor = conn.cursor()
+    
+    try:
+        cursor.execute("SELECT welcome_channel FROM welcome_config WHERE guild_id = ?", (str(guild_id),))
+        result = cursor.fetchone()
+        if result and result[0]:
+            return int(result[0])
+        return None
+    except Exception as e:
+        print(f"🔴 [DB FETCH WELCOME ERROR]: {e}")
+        return None
+    finally:
+        conn.close()
+
+@bot.event
+async def on_member_join(member: discord.Member):
+    # Pobieramy ID kanału powitalnego dla serwera, na który właśnie ktoś wszedł
+    channel_id = await asyncio.to_thread(get_welcome_channel_id, member.guild.id)
+    
+    # Jeśli admin nie ustawił kanału komendą /setwelcomechannel, nic nie robimy
+    if not channel_id:
+        return
+        
+    # Próbujemy znaleźć kanał w pamięci bota
+    channel = member.guild.get_channel(channel_id)
+    
+    if channel:
+        try:
+            # Budujemy nowoczesny Embed powitalny VoltBota
+            embed = discord.Embed(
+                title="👋 Welcome to the Server!",
+                description=f"Welcome {member.mention}! We are absolutely thrilled to have you here with us. 🎉",
+                color=discord.Color.blue()
+            )
+            embed.add_field(name="🆔 User ID", value=f"`{member.id}`", inline=True)
+            embed.add_field(name="📈 Total Members", value=f"**{member.guild.member_count}**", inline=True)
+            
+            # Miniaturka z awatarem nowego użytkownika
+            embed.set_thumbnail(url=member.display_avatar.url)
+            embed.set_footer(text=f"{member.guild.name} • Volt Utilities", icon_url=member.guild.icon.url if member.guild.icon else None)
+            
+            # Wysyłamy powitanie na ustawiony wcześniej kanał
+            await channel.send(content=member.mention, embed=embed)
+            
+        except Exception as e:
+            print(f"❌ [WELCOME SEND ERROR] Could not send message in {member.guild.name}: {e}")
+
 def update_leave_channel(guild_id: int, channel_id: int) -> bool:
     """Bezpiecznie zapisuje lub aktualizuje kanał pożegnalny dla serwera w tle."""
     base_dir = os.path.dirname(os.path.abspath(__file__))
