@@ -168,26 +168,48 @@ def init_db():
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     
-    # Tabela 1: Aktywne subskrypcje użytkowników
+    # 1. Usuwamy stare, niedopasowane tabele (skoro i tak są puste)
+    cursor.execute("DROP TABLE IF EXISTS subscriptions;")
+    cursor.execute("DROP TABLE IF EXISTS license_keys;")
+    cursor.execute("DROP TABLE IF EXISTS warnings;") # Resetujemy też stare warnings pod serwery
+    
+    # 2. Tabela: Wygenerowane i używane licencje (Premium na serwer pod /ticket)
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS subscriptions (
-            user_id INTEGER PRIMARY KEY,
-            premium_until INTEGER
+        CREATE TABLE IF NOT EXISTS licenses (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            license_key TEXT UNIQUE NOT NULL,
+            duration_days INTEGER NOT NULL,
+            is_used INTEGER DEFAULT 0,
+            used_by_user_id TEXT,  -- Tutaj ląduje guild_id (ID serwera)
+            expires_at INTEGER
         )
     """)
     
-    # Tabela 2: Wygenerowane klucze czekające na użycie
+    # 3. Tabela: Ostrzeżenia (Wersja bezpieczna, wieloserwerowa)
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS license_keys (
-            key_code TEXT PRIMARY KEY,
-            days INTEGER
+        CREATE TABLE IF NOT EXISTS warnings (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            guild_id TEXT NOT NULL,
+            user_id TEXT NOT NULL,
+            reason TEXT NOT NULL,
+            timestamp INTEGER
+        )
+    """)
+    
+    # 4. Tabela: Ekonomia (Dbamy o to, żeby była, jeśli jej używasz)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS economy (
+            user_id INTEGER PRIMARY KEY,
+            balance INTEGER DEFAULT 0,
+            last_daily REAL DEFAULT 0
         )
     """)
     
     conn.commit()
     conn.close()
+    print("✨ [DATABASE] Wszystkie tabele w volt.db zostały pomyślnie zsynchronizowane z kodem!")
 
-# Uruchamiamy tworzenie tabel
+# Uruchamiamy tworzenie i aktualizację tabel przy starcie
 init_db()
 
 def init_subs_db():
