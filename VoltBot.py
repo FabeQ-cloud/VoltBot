@@ -583,69 +583,91 @@ async def ping(interaction: discord.Interaction):
     embed.set_footer(text=f"Requested by {interaction.user.name}", icon_url=interaction.user.display_avatar.url)
 
     await interaction.response.send_message(embed=embed)
-@bot.tree.command(name="help", description="Show all commands")
+    
+@bot.tree.command(name="help", description="Show all available VoltBot commands and features")
 async def help(interaction: discord.Interaction):
-
+    
+    # Tworzymy piękny embed pasujący do Twojej neonowej strony www
     embed = discord.Embed(
-        title="⚡ Volt Help",
-        color=0x00ffcc
+        title="⚡ VoltBot – Command Directory",
+        description=(
+            "Welcome to the official help menu. Use the commands below to manage, "
+            "engage, and level up your Discord server!\n\n"
+            "🔗 *Need Premium? Check out our pricing page!*"
+        ),
+        color=0x00ffcc # Twój jaskrawy, neonowy błękit/zieleń
     )
 
+    # 1. MODERATION
     embed.add_field(
-        name="Moderation",
-        value="""
-/warn
-/warnings
-/kick
-/ban
-/timeout
-""",
+        name="🛡️ Moderation",
+        value=(
+            "`/warn` • Issue a formal warning to a user\n"
+            "`/warnings` • View a user's active warnings\n"
+            "`/kick` • Kick a member from the server\n"
+            "`/ban` • Permanently ban a member\n"
+            "`/timeout` • Temporarily mute/timeout a member"
+        ),
         inline=False
     )
 
+    # 2. ECONOMY
     embed.add_field(
-        name="Economy",
-        value="""
-/balance
-/work
-/daily
-/pay
-/leaderboard
-/coinflip
-""",
+        name="💰 Economy & Fun",
+        value=(
+            "`/balance` • Check your current wallet and bank balance\n"
+            "`/work` • Shift work to earn steady cash\n"
+            "`/daily` • Claim your free daily coin allowance\n"
+            "`/pay` • Transfer coins securely to another user\n"
+            "`/leaderboard` • See who dominates the local economy\n"
+            "`/coinflip` • Gamble your coins on a 50/50 flip"
+        ),
         inline=False
     )
 
+    # 3. LEVELS & CONFIG
     embed.add_field(
-        name="Levels",
-        value="""
-/rank
-/stats
-/setlevelreward
-""",
+        name="📈 Levels & System Config",
+        value=(
+            "`/rank` • Display your current level status card\n"
+            "`/stats` • Detailed XP and leveling breakdown\n"
+            "`/setwelcomechannel` • Set the server welcome log channel\n"
+            "`/setleavechannel` • Set the server farewell log channel\n"
+            "`👑 /setlevelreward` • Configure role rewards for milestones **[Premium]**"
+        ),
         inline=False
     )
 
+    # 4. TICKETS
     embed.add_field(
-        name="Tickets",
-        value="""
-/ticket
-/close
-""",
+        name="🎟️ Support Tickets",
+        value=(
+            "`/ticket` • Open a new dedicated support channel\n"
+            "`/close` • Securely close and archive an active ticket"
+        ),
         inline=False
     )
 
+    # 5. UTILITY
     embed.add_field(
-        name="Utility",
-        value="""
-/help
-/ping
-/serverinfo
-/userinfo
-""",
+        name="⚙️ Utility",
+        value=(
+            "`/help` • Open this command directory interface\n"
+            "`/ping` • Test the bot's current API latency\n"
+            "`/serverinfo` • Fetch comprehensive server statistics\n"
+            "`/userinfo` • Display detailed information about a member"
+        ),
         inline=False
     )
 
+    # Profesjonalna stopka z awatarem bota (jeśli dostępny)
+    bot_avatar = bot.user.display_avatar.url if bot.user else None
+    embed.set_footer(
+        text=f"Volt Utilities • Serving {interaction.guild.name}", 
+        icon_url=bot_avatar
+    )
+
+    # Wysyłamy menu pomocnicze jako odpowiedź
     await interaction.response.send_message(embed=embed)
 
 class TicketView(discord.ui.View):
@@ -2786,41 +2808,80 @@ async def license_info(interaction: discord.Interaction):
 
     await interaction.response.send_message(embed=embed)
 
-@bot.tree.command(name="leaderboard", description="Top richest users")
-@premium_only()
-async def leaderboard(interaction: discord.Interaction):
+def get_top_economy_data(limit: int = 10) -> list[tuple[str, int]]:
+    """Bezpiecznie pobiera TOP 10 najbogatszych graczy z bazy danych w tle."""
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    db_path = os.path.join(base_dir, "volt.db")
+    
+    conn = sqlite3.connect(db_path, timeout=10)
+    cursor = conn.cursor()
+    
+    try:
+        cursor.execute("""
+            SELECT user_id, balance
+            FROM economy
+            ORDER BY balance DESC
+            LIMIT ?
+        """, (limit,))
+        return cursor.fetchall()
+    except Exception as e:
+        print(f"🔴 [DB LEADERBOARD ERROR]: {e}")
+        return []
+    finally:
+        conn.close()
 
+@bot.tree.command(name="leaderboard", description="Display the global economy leaderboard of the richest users")
+@premium_only() # Trzymamy komendę jako ekskluzywną funkcję Premium!
+async def leaderboard(interaction: discord.Interaction):
+    
+    # Deferujemy odpowiedź, bo pobieranie nazw użytkowników może chwilę zająć
     await interaction.response.defer()
 
-    cursor.execute("""
-        SELECT user_id, balance
-        FROM economy
-        ORDER BY balance DESC
-        LIMIT 10
-    """)
-
-    rows = cursor.fetchall()
+    # Pobieramy dane z bazy w bezpiecznym wątku
+    rows = await asyncio.to_thread(get_top_economy_data, 10)
 
     if not rows:
-        await interaction.followup.send("No data found.")
+        await interaction.followup.send("❌ No economy data found yet. Start working to earn some coins!")
         return
 
     embed = discord.Embed(
-        title="Economy Leaderboard",
+        title="💰 Volt Gold Reserve — Leaderboard",
         color=discord.Color.gold()
     )
 
-    description = ""
+    description_lines = []
 
-    for i, (user_id, balance) in enumerate(rows, start=1):
+    # Przetwarzamy wyniki
+    for i, (user_id_str, balance) in enumerate(rows, start=1):
+        user_id = int(user_id_str)
+        
+        # ⚡ OPTYMALIZACJA: Najpierw szukamy w pamięci podręcznej bota (0 ms lagów)
+        user = bot.get_user(user_id)
+        
+        if not user:
+            try:
+                # Jeśli nie ma w cache, dopiero wtedy odpytujemy API Discorda
+                user = await bot.fetch_user(user_id)
+            except Exception:
+                user = None
 
-        user = await bot.fetch_user(user_id)
+        # Formatujemy wyświetlaną nazwę
+        username = user.name if user else f"Unknown User ({user_id})"
+        
+        # Dodajemy linijkę (pogrubiamy TOP 3 dla lepszego wyglądu)
+        if i == 1:
+            description_lines.append(f"🥇 **{username}** — `{balance:,}` coins")
+        elif i == 2:
+            description_lines.append(f"🥈 **{username}** — `{balance:,}` coins")
+        elif i == 3:
+            description_lines.append(f"🥉 **{username}** — `{balance:,}` coins")
+        else:
+            description_lines.append(f"**{i}.** {username} — `{balance:,}` coins")
 
-        description += f"**{i}.** {user.name} — {balance:,}\n"
-
-    embed.description = description
-
-    embed.set_footer(text="Volt Economy System")
+    embed.description = "\n".join(description_lines)
+    
+    bot_avatar = bot.user.display_avatar.url if bot.user else None
+    embed.set_footer(text="Volt Premium Economy System", icon_url=bot_avatar)
 
     await interaction.followup.send(embed=embed)
 
