@@ -216,9 +216,6 @@ def init_db():
     conn.commit()
     conn.close()
     
-    conn.commit()
-    conn.close()
-    
     print("✨ [DATABASE] Wszystkie tabele w volt.db zostały pomyślnie zsynchronizowane z kodem!")
 
 # Uruchamiamy tworzenie i aktualizację tabel przy starcie
