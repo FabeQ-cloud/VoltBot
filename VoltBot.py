@@ -2252,35 +2252,61 @@ async def leaderboard(interaction: discord.Interaction):
 
 YOUR_DISCORD_ID = 1490030330084720892
 
-@bot.tree.command(name="license_generate", description="Generate a new license key (Admin only)")
-@app_commands.describe(days="How many days of subscription")
+@bot.tree.command(name="license_generate", description="Generate a new Premium license key (Admin Only)")
+@app_commands.describe(days="How many days of Premium this key should grant")
 async def license_generate(interaction: discord.Interaction, days: int):
-    if interaction.user.id != YOUR_DISCORD_ID:
-        await interaction.response.send_message("❌ You do not have permission to use this command.", ephemeral=True)
+    # 1. Zabezpieczenie: tylko Administrator serwera może generować klucze
+    if not interaction.user.guild_permissions.administrator:
+        await interaction.response.send_message("❌ Only server administrators can generate keys.", ephemeral=True)
         return
 
-    try:
-        raw_key = secrets.token_hex(6).upper()
-        license_key = f"VOLT-{raw_key[:4]}-{raw_key[4:8]}-{raw_key[8:12]}"
-        
-        # Zapis przez Twój moduł bazy danych
-        db_status = database.add_license_key(license_key, days)
-        
-        if db_status:
-            embed_key = discord.Embed(
-                title="🔑 New License Generated",
-                color=discord.Color.green()
-            )
-            embed_key.add_field(name="Key", value=f"`{license_key}`", inline=False)
-            embed_key.add_field(name="Duration", value=f"{days} Days", inline=True)
-            
-            await interaction.response.send_message(embed=embed_key, ephemeral=True)
-        else:
-            await interaction.response.send_message("❌ Failed to insert key into database.", ephemeral=True)
-            
-    except Exception as error:
-        await interaction.response.send_message(f"**Backend Error:** `{str(error)}`", ephemeral=True)
+    # Deferujemy odpowiedź, żeby bot spokojnie zapisał dane w bazie
+    await interaction.response.defer(ephemeral=True)
 
+    # 2. Generujemy unikalny klucz w formacie: VOLT-XXXX-XXXX-XXXX
+    # secrets.token_hex(4) daje nam 8 losowych znaków (np. a1b2c3d4)
+    key_part1 = secrets.token_hex(4).upper()
+    key_part2 = secrets.token_hex(4).upper()
+    key_part3 = secrets.token_hex(4).upper()
+    generated_key = f"VOLT-{key_part1}-{key_part2}-{key_part3}"
+
+    # 3. Zapisujemy wygenerowany klucz bezpośrednio do bazy volt.db
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    db_path = os.path.join(base_dir, "volt.db")
+
+    conn = sqlite3.connect(db_path, timeout=10)
+    cursor = conn.cursor()
+
+    try:
+        # Wrzucamy czysty klucz: is_used jest domyślnie 0, reszta kolumn pusta, dopóki ktoś go nie użyje
+        cursor.execute(
+            "INSERT INTO licenses (license_key, duration_days) VALUES (?, ?)",
+            (generated_key, days)
+        )
+        conn.commit()
+
+        # 4. Tworzymy ładną odpowiedź dla Ciebie w konsoli/Discordzie
+        embed_key = discord.Embed(
+            title="🔑 New License Key Generated",
+            description="Keep this key secure. You can give it to a server owner to activate Premium.",
+            color=0x00fff0 # Neonowy błękit VoltBota
+        )
+        embed_key.add_field(name="🎫 License Key", value=f"`{generated_key}`", inline=False)
+        embed_key.add_field(name="⏳ Duration", value=f"`{days} Days`", inline=True)
+        embed_key.add_field(name="🔒 Status", value="`Ready to redeem`", inline=True)
+        embed_key.set_footer(text="VoltBot License System")
+
+        await interaction.followup.send(embed=embed_key, ephemeral=True)
+
+    except sqlite3.IntegrityError:
+        # Bardzo mała szansa, ale jeśli klucz by się powtórzył w bazie:
+        await interaction.followup.send("⚠️ Key collision detected. Please try running the command again.", ephemeral=True)
+    except Exception as e:
+        print(f"❌ [GENERATE ERROR] {e}")
+        await interaction.followup.send(f"❌ Database error while generating key: `{e}`", ephemeral=True)
+    finally:
+        conn.close()
+        
 @bot.tree.command(name="license_redeem", description="Activate your subscription key for this server")
 @app_commands.describe(key="Your license key (VOLT-XXXX-XXXX-XXXX)")
 async def license_redeem(interaction: discord.Interaction, key: str):
