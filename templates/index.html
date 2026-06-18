@@ -23,7 +23,7 @@
             text-shadow: 0 0 10px rgba(0, 255, 240, 0.3);
         }
         .container {
-            max-width: 1000px;
+            max-width: 1300px;
             margin: 40px auto;
             padding: 0 20px;
             text-align: center;
@@ -49,11 +49,11 @@
             font-size: 16px;
         }
         
-        /* Układ kafelków cennika */
+        /* Układ 4 kafelków cennika */
         .pricing-table {
             display: flex;
             justify-content: center;
-            gap: 30px;
+            gap: 25px;
             flex-wrap: wrap;
             margin-top: 20px;
         }
@@ -61,8 +61,8 @@
             background-color: #16162a;
             border: 1px solid #303056;
             border-radius: 16px;
-            padding: 40px 30px;
-            width: 280px;
+            padding: 40px 25px;
+            width: 250px;
             transition: all 0.3s ease-in-out;
             position: relative;
             box-shadow: 0 8px 16px rgba(0,0,0,0.4);
@@ -125,7 +125,7 @@
             margin-bottom: 2px;
         }
         .price {
-            font-size: 46px;
+            font-size: 44px;
             font-weight: bold;
             color: #00fff0;
             line-height: 1.1;
@@ -261,7 +261,7 @@
         }
 
         /* Responsywność dla telefonów komórkowych */
-        @media (max-width: 768px) {
+        @media (max-width: 950px) {
             .steps-container {
                 flex-direction: column;
             }
@@ -280,7 +280,7 @@
 
     <div class="container">
         <h1>Volt Premium License</h1>
-        <p class="subtitle">Unlock the full power of advanced economy and exclusive commands.</p>
+        <p class="subtitle">Unlock the full power of advanced economy, tickets, levels, and exclusive commands.</p>
         
         <div class="stats">
             <strong>Bot Status:</strong> <span style="color: #00ff88;">Online 🟢</span> &nbsp;|&nbsp; 
@@ -288,38 +288,74 @@
         </div>
 
         <div class="pricing-table">
+            <!-- KARTA 0: FREE TRIAL -->
+            <div class="card" style="border-color: #40407a; opacity: 0.9;">
+                <div class="plan-name" style="color: #a0a0c0;">Free Trial</div>
+                <div class="price-box">
+                    <span class="old-price" style="visibility: hidden;">$0.00</span>
+                    <div class="price" style="color: #a0a0c0;">$0.00 <span>/ 24 hours</span></div>
+                </div>
+                <div class="save-badge" style="background-color: rgba(255,255,255,0.05); color: #a0a0c0; border-color: rgba(255,255,255,0.1);">100% Free</div>
+                <ul class="features">
+                    <li>Test All Premium Features</li>
+                    <li>Experience Full /daily Luck</li>
+                    <li>No Credit Card Required</li>
+                    <li>Instant Setup on Discord</li>
+                </ul>
+                <a href="https://discord.gg/yeKhgWXN" target="_blank" class="btn" style="background: #303056; border-color: #40407a;">Claim on Discord</a>
+            </div>
+
+            <!-- KARTA 1: MONTHLY -->
             <div class="card">
                 <div class="plan-name">Monthly Pass</div>
                 <div class="price-box">
-                    <span class="old-price">$14.99</span>
-                    <div class="price">$9.99 <span>/ 30 days</span></div>
+                    <span class="old-price">$24.99</span>
+                    <div class="price">$14.99 <span>/ 30 days</span></div>
                 </div>
-                <div class="save-badge">Save 33%</div>
+                <div class="save-badge">Save 40%</div>
                 <ul class="features">
-                    <li>Full Access to /daily</li>
-                    <li>Premium Role on Support</li>
+                    <li>Full Access to /daily Perks</li>
                     <li>Advanced Economy Tools</li>
+                    <li>Priority Ticket Support</li>
                     <li>24/7 Uptime Guaranteed</li>
                 </ul>
-                <a href="https://www.paypal.com/cgi-bin/webscr?cmd=_xclick&business=fabianekzielenkiewicz@gmail.com&item_name=VoltBot%20Premium%20-%2030%20Days&amount=9.99&currency_code=USD" target="_blank" class="btn">Buy via PayPal</a>
+                <a href="https://www.paypal.com/cgi-bin/webscr?cmd=_xclick&business=fabianekzielenkiewicz@gmail.com&item_name=VoltBot%20Premium%20-%2030%20Days&amount=14.99&currency_code=USD" target="_blank" class="btn">Buy via PayPal</a>
             </div>
 
+            <!-- KARTA 2: YEARLY -->
+            <div class="card">
+                <div class="plan-name">Yearly Pass</div>
+                <div class="price-box">
+                    <span class="old-price">$39.99</span>
+                    <div class="price">$24.99 <span>/ 1 year</span></div>
+                </div>
+                <div class="save-badge">Save 37%</div>
+                <ul class="features">
+                    <li>All Monthly Features</li>
+                    <li>Massive Discount (Save $15)</li>
+                    <li>12 Months of Non-stop Perks</li>
+                    <li>Exclusive Server Role</li>
+                </ul>
+                <a href="https://www.paypal.com/cgi-bin/webscr?cmd=_xclick&business=fabianekzielenkiewicz@gmail.com&item_name=VoltBot%20Premium%20-%201%20Year&amount=24.99&currency_code=USD" target="_blank" class="btn">Buy via PayPal</a>
+            </div>
+
+            <!-- KARTA 3: LIFETIME -->
             <div class="card popular">
                 <div class="badge">Best Value</div>
                 <div class="plan-name">Lifetime Pro</div>
                 <div class="price-box">
-                    <span class="old-price">$24.99</span>
-                    <div class="price">$19.99 <span>/ forever</span></div>
+                    <span class="old-price">$59.99</span>
+                    <div class="price">$34.99 <span>/ forever</span></div>
                 </div>
-                <div class="save-badge">Save $5.00</div>
+                <div class="save-badge">Save $25.00</div>
                 <ul class="features">
-                    <li>All Monthly Features</li>
-                    <li>One-time Payment</li>
-                    <li>No Renewal Needed</li>
+                    <li>All Premium Features</li>
+                    <li>One-time Payment (No Renewals)</li>
                     <li>Priority Feature Requests</li>
-                    <li>Exclusive Bot Badge</li>
+                    <li>Exclusive Bot Profile Badge</li>
+                    <li>All Future Updates Included</li>
                 </ul>
-                <a href="https://www.paypal.com/cgi-bin/webscr?cmd=_xclick&business=fabianekzielenkiewicz@gmail.com&item_name=VoltBot%20Premium%20-%20Lifetime&amount=19.99&currency_code=USD" target="_blank" class="btn">Buy via PayPal</a>
+                <a href="https://www.paypal.com/cgi-bin/webscr?cmd=_xclick&business=fabianekzielenkiewicz@gmail.com&item_name=VoltBot%20Premium%20-%20Lifetime&amount=34.99&currency_code=USD" target="_blank" class="btn">Buy via PayPal</a>
             </div>
         </div>
 
@@ -332,11 +368,11 @@
         <div class="steps-container">
             <div class="step">
                 <h4>1. Purchase 💳</h4>
-                <p>Choose your plan and complete the secure payment via PayPal.</p>
+                <p>Choose your plan and complete the secure payment via PayPal or request a Free Trial.</p>
             </div>
             <div class="step">
                 <h4>2. Get Key ✉️</h4>
-                <p>Click the contact button above and send me a message to receive your key.</p>
+                <p>Click the contact button above and send me a message to receive your unique key.</p>
             </div>
             <div class="step">
                 <h4>3. Redeem 🔑</h4>
@@ -346,6 +382,7 @@
 
     </div>
 
+    <!-- SEKCJA PROFILU GRACZA -->
     <div class="profile-checker">
         <h2 style="color: white; margin-top: 0; text-shadow: 0 0 10px rgba(0, 255, 240, 0.2);">🔍 Check Player Profile</h2>
         <p style="color: #b0b0d0; font-size: 14px;">Enter Discord User ID to check balance and premium status.</p>
@@ -371,6 +408,26 @@
             </p>
         </div>
         {% endif %}
+    </div>
+
+    <!-- SEKCJA FAQ -->
+    <div class="faq-section" style="max-width: 740px; margin: 60px auto; padding: 0 20px; text-align: left;">
+        <h2 style="color: #00fff0; text-align: center; margin-bottom: 30px; text-shadow: 0 0 10px rgba(0, 255, 240, 0.2);">💬 Frequently Asked Questions</h2>
+        
+        <div style="background-color: #16162a; border: 1px solid #303056; border-radius: 10px; padding: 20px; margin-bottom: 15px;">
+            <h4 style="color: #ffffff; margin: 0 0 8px 0; font-size: 16px;">❓ How do I activate my Premium status after buying?</h4>
+            <p style="color: #b0b0d0; margin: 0; font-size: 14px; line-height: 1.5;">After a successful secure PayPal payment, click the "Contact Me on Discord" button to open a support ticket. Send your payment confirmation, and you will receive a unique license key. Then simply type <code>/redeem [your_key]</code> on your server!</p>
+        </div>
+
+        <div style="background-color: #16162a; border: 1px solid #303056; border-radius: 10px; padding: 20px; margin-bottom: 15px;">
+            <h4 style="color: #ffffff; margin: 0 0 8px 0; font-size: 16px;">❓ Can I transfer my Lifetime license to another server?</h4>
+            <p style="color: #b0b0d0; margin: 0; font-size: 14px; line-height: 1.5;">Yes! Premium status can be easily bound to your specific server or your profile. If you decide to change or rebuild your server, our team will help you transfer your active license free of charge.</p>
+        </div>
+
+        <div style="background-color: #16162a; border: 1px solid #303056; border-radius: 10px; padding: 20px;">
+            <h4 style="color: #ffffff; margin: 0 0 8px 0; font-size: 16px;">❓ What happens if VoltBot goes offline?</h4>
+            <p style="color: #b0b0d0; margin: 0; font-size: 14px; line-height: 1.5;">VoltBot is hosted on high-performance cloud servers with a 99.9% uptime guarantee. In the extremely rare event of maintenance downtime, all premium durations are automatically extended so you never lose a single minute of your paid time.</p>
+        </div>
     </div>
     
 </body>
