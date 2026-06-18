@@ -1957,13 +1957,6 @@ def process_coin_transfer(sender_id: int, receiver_id: int, amount: int) -> tupl
         
     finally:
         conn.close()
-        
-    except Exception as e:
-        conn.rollback() # W razie awarii prądu lub pliku - cofamy zmiany, żeby nikomu nie zniknęły monety
-        print(f"🔴 [DB TRANSFER ERROR]: {e}")
-        return "error", str(e)
-    finally:
-        conn.close()
 
 @bot.tree.command(name="pay", description="Transfer a specific amount of Volt Coins to another server member")
 @premium_only()
