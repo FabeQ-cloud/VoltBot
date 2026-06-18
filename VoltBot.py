@@ -1329,78 +1329,139 @@ async def warn(interaction: discord.Interaction, user: discord.Member, reason: s
 
     await interaction.followup.send(embed=embed_success)
 
-@bot.tree.command(name="warnings", description="Check user warnings")
-@app_commands.describe(user="User to check")
-async def warnings_cmd(
-    interaction: discord.Interaction,
-    user: discord.Member
-):
+@bot.tree.command(name="warnings", description="View the warning history of a specific member")
+@app_commands.describe(user="The member whose warnings you want to check")
+async def warnings_cmd(interaction: discord.Interaction, user: discord.Member):
+    # Deferujemy odpowiedź, bo odpytujemy bazę danych
+    await interaction.response.defer(ephemeral=False)
 
-    cursor.execute(
-        "SELECT reason FROM warnings WHERE user_id = ?",
-        (user.id,)
-    )
-
-    rows = cursor.fetchall()
-
-    if not rows:
-        await interaction.response.send_message(
-            "No warnings found."
-        )
+    # Zabezpieczenie przed użyciem w wiadomości prywatnej (DM)
+    if not interaction.guild_id:
+        await interaction.followup.send("❌ This command can only be used inside a server.", ephemeral=True)
         return
 
-    text = "\n".join(
-        [f"{i+1}. {r[0]}" for i, r in enumerate(rows)]
-    )
+    guild_id = str(interaction.guild_id)
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    db_path = os.path.join(base_dir, "volt.db")
 
-    await interaction.response.send_message(
-        f"Warnings for {user.mention}:\n\n{text}"
-    )
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
 
-@bot.tree.command(name="serverinfo", description="Show information about the server")
+    try:
+        # Pobieramy ID ostrzeżenia oraz powód, filtrując TYLKO po obecnym serwerze i użytkowniku
+        cursor.execute(
+            "SELECT id, reason FROM warnings WHERE guild_id = ? AND user_id = ? ORDER BY id ASC",
+            (guild_id, str(user.id))
+        )
+        rows = cursor.fetchall()
+
+        # Jeśli lista jest pusta – użytkownik jest czysty
+        if not rows:
+            embed_clean = discord.Embed(
+                title="🛡️ Warning History",
+                description=f"{user.mention} (`{user.id}`) has a **completely clean record** on this server. No warnings found.",
+                color=discord.Color.green()
+            )
+            embed_clean.set_thumbnail(url=user.display_avatar.url)
+            embed_clean.set_footer(text="VoltBot Moderation Suite")
+            await interaction.followup.send(embed=embed_clean)
+            return
+
+        # Budujemy przejrzystą listę warnów do Embedu
+        # rows zawiera krotki: (id, reason), np. (1, "Spamming chat")
+        warning_list = []
+        for row in rows:
+            warn_id, reason = row
+            warning_list.append(f"**Case #{warn_id}** — {reason}")
+
+        # Łączymy wpisy w jeden czytelny blok tekstu
+        full_text = "\n".join(warning_list)
+
+        # Tworzymy elegancki panel z historią kar
+        embed_warnings = discord.Embed(
+            title=f"⚠️ Warnings for {user.name}",
+            description=f"Total active infractions: `{len(rows)}`",
+            color=discord.Color.orange()
+        )
+        embed_warnings.add_field(name="History", value=full_text, inline=False)
+        embed_warnings.set_thumbnail(url=user.display_avatar.url)
+        embed_warnings.set_footer(text=f"Requested by {interaction.user.name} • VoltBot Mod")
+
+        await interaction.followup.send(embed=embed_warnings)
+
+    except Exception as e:
+        print(f"❌ [WARNINGS CMD ERROR] {e}")
+        await interaction.followup.send(f"❌ Database error while fetching history: `{e}`", ephemeral=True)
+        
+    finally:
+        # Zawsze bezpiecznie zamykamy bazę danych
+        conn.close()
+        
+@bot.tree.command(name="serverinfo", description="Display comprehensive information and statistics about this server")
 async def serverinfo(interaction: discord.Interaction):
+    # Deferujemy, bo zliczanie kanałów i przetwarzanie ikon może zająć ułamek sekundy
+    await interaction.response.defer(ephemeral=False)
 
     guild = interaction.guild
+    if not guild:
+        await interaction.followup.send("❌ This command can only be used inside a server.", ephemeral=True)
+        return
 
-    embed = discord.Embed(
-        title=f"{guild.name}",
-        color=0x00ffcc
-    )
-
-    embed.add_field(
-        name="Owner:",
-        value=str(guild.owner),
-        inline=False
-    )
-
-    embed.add_field(
-        name="Members",
-        value=str(guild.member_count),
-        inline=True
-    )
-
-    embed.add_field(
-        name="Channels",
-        value=str(len(guild.channels)),
-        inline=True
-    )
-
-    embed.add_field(
-            name="Roles",
-            value=str(len(guild.roles)),
-            inline=True
-        )
+    # 1. Dokładne zliczanie typów kanałów
+    text_channels = len(guild.text_channels)
+    voice_channels = len(guild.voice_channels)
+    categories = len(guild.categories)
+    stage_channels = len(guild.stage_channels)
     
-    embed.add_field(
-        name="Created",
-        value=guild.created_at.strftime("%d-%m-%Y"),
-        inline=False
+    # 2. Bezpieczne wyciąganie właściciela serwera
+    owner_mention = f"<@{guild.owner_id}>" if guild.owner_id else "Unknown"
+
+    # 3. Przygotowanie timestampu Discorda dla daty stworzenia serwera
+    created_timestamp = int(guild.created_at.timestamp())
+    discord_time_full = f"<t:{created_timestamp}:F>"      # Pełna data
+    discord_time_relative = f"<t:{created_timestamp}:R>"  # Np. "3 lata temu"
+
+    # 4. Budowanie profesjonalnego Embedu w stylu Volt Premium
+    embed = discord.Embed(
+        title=f"📊 {guild.name} — Server Overview",
+        color=0x00fff0 # Twój neonowy błękit VoltBota
     )
 
+    # Informacje główne
+    embed.add_field(name="👑 Owner", value=owner_mention, inline=True)
+    embed.add_field(name="🆔 Server ID", value=f"`{guild.id}`", inline=True)
+    embed.add_field(name="📆 Created On", value=f"{discord_time_full}\n({discord_time_relative})", inline=False)
+
+    # Statystyki użytkowników i ról
+    embed.add_field(name="👥 Total Members", value=f"`{guild.member_count}` members", inline=True)
+    embed.add_field(name="🛡️ Roles", value=f"`{len(guild.roles)}` roles", inline=True)
+    
+    # Statystyki ulepszeń (Boostów)
+    boost_count = guild.premium_subscription_count
+    boost_level = guild.premium_tier
+    embed.add_field(name="🚀 Server Boosts", value=f"Level `{boost_level}` (`{boost_count}` Boosts)", inline=True)
+
+    # Szczegółowe zestawienie kanałów
+    channels_structure = (
+        f"📁 Categories: `{categories}`\n"
+        f"💬 Text: `{text_channels}`\n"
+        f"🔊 Voice: `{voice_channels}`"
+    )
+    if stage_channels > 0:
+        channels_structure += f"\n🎭 Stage: `{stage_channels}`"
+
+    embed.add_field(name="📊 Channel Directory", value=channels_structure, inline=False)
+
+    # Dodawanie ikony serwera jako miniaturki (Thumbnail) i baneru (jeśli istnieje)
     if guild.icon:
         embed.set_thumbnail(url=guild.icon.url)
+    
+    if guild.banner:
+        embed.set_image(url=guild.banner.url)
 
-    await interaction.response.send_message(embed=embed)
+    embed.set_footer(text=f"VoltBot Utility Suite • Data current", icon_url=bot.user.display_avatar.url)
+
+    await interaction.followup.send(embed=embed)
     
 @bot.tree.command(name="userinfo", description="Show information about a user")
 @app_commands.describe(user="Select a user")
@@ -2397,22 +2458,74 @@ async def license_redeem(interaction: discord.Interaction, key: str):
         # Zawsze zamykamy połączenie, żeby nie zablokować pliku bazy .db
         conn.close()
         
-@bot.tree.command(name="license_check", description="Check your subscription status")
+@bot.tree.command(name="license_check", description="Check the Premium subscription status for this server")
 async def license_check(interaction: discord.Interaction):
-    user_id = str(interaction.user.id)
-    expiration_date = database.check_user_license(user_id)
-    
-    if expiration_date:
-        await interaction.response.send_message(
-            f"**Your premium subscription is active!**\n📅 **Expires on:** `{expiration_date}` UTC", 
-            ephemeral=True
+    # Deferujemy odpowiedź, bo zaglądamy do bazy danych
+    await interaction.response.defer(ephemeral=True)
+
+    # Zabezpieczenie przed wpisaniem w DM
+    if not interaction.guild_id:
+        await interaction.followup.send("❌ This command can only be used inside a server.", ephemeral=True)
+        return
+
+    guild_id = str(interaction.guild_id)
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    db_path = os.path.join(base_dir, "volt.db")
+
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    current_time = int(time.time())
+
+    try:
+        # Szukamy aktywnej licencji przypisanej do tego serwera
+        cursor.execute(
+            "SELECT expires_at FROM licenses WHERE used_by_user_id = ? AND is_used = 1",
+            (guild_id,)
         )
-    else:
-        # Informacja dla kogoś, kto nie aktywował żadnego klucza
-        await interaction.response.send_message(
-            "You do not have an active subscription.", 
-            ephemeral=True
+        row = cursor.fetchone()
+
+        if row and row[0] is not None:
+            expires_at = int(row[0])
+
+            # Sprawdzamy czy licencja jeszcze NIE wygasła
+            if expires_at > current_time:
+                # <t:expires_at:F> - Pełna data i godzina (np. 18 czerwca 2026 16:30)
+                # <t:expires_at:R> - Odliczanie relatywne (np. za 20 dni)
+                discord_time_full = f"<t:{expires_at}:F>"
+                discord_time_relative = f"<t:{expires_at}:R>"
+
+                embed_active = discord.Embed(
+                    title="👑 Volt Premium Status",
+                    description=f"This server **{interaction.guild.name}** has an active Premium subscription! 🌌",
+                    color=0x00fff0 # Twój neonowy błękit
+                )
+                embed_active.add_field(name="📅 Expiration Date", value=discord_time_full, inline=False)
+                embed_active.add_field(name="⏳ Time Remaining", value=discord_time_relative, inline=False)
+                embed_active.add_field(name="🔒 Server Protection", value="`Enabled 🟢`", inline=True)
+                embed_active.add_field(name="⚡ Features Unlocked", value="`All Premium Commands`", inline=True)
+                embed_active.set_footer(text="Thank you for supporting VoltBot!")
+                
+                await interaction.followup.send(embed=embed_active, ephemeral=True)
+                return
+
+        # Jeśli row jest pusty lub czas wygasł – serwer nie ma Premium
+        embed_inactive = discord.Embed(
+            title="❌ Premium Inactive",
+            description=(
+                f"This server **{interaction.guild.name}** does not have an active Premium subscription.\n\n"
+                f"To unlock premium modules like advanced `/ticket` logs and filters, "
+                f"redeem a valid key using `/license_redeem`."
+            ),
+            color=discord.Color.red()
         )
+        embed_inactive.set_footer(text="VoltBot Licensing Hub")
+        await interaction.followup.send(embed=embed_inactive, ephemeral=True)
+
+    except Exception as e:
+        print(f"❌ [CHECK ERROR] {e}")
+        await interaction.followup.send(f"❌ An error occurred while checking license: `{e}`", ephemeral=True)
+    finally:
+        conn.close()
 
 def main():
     port = int(os.getenv("PORT", 8000))
