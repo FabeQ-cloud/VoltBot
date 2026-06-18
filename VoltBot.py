@@ -1923,8 +1923,7 @@ async def work(interaction: discord.Interaction):
     await interaction.response.send_message(embed=embed)
 
 def process_coin_transfer(sender_id: int, receiver_id: int, amount: int) -> tuple[str, str]:
-    """Przetwarza przelew monet wewnątrz bezpiecznej transakcji. 
-    Zwraca status ('success', 'insufficient_funds', 'error') oraz ewentualny komunikat błędu."""
+    """Przetwarza przelew monet wewnątrz bezpiecznej transakcji."""
     base_dir = os.path.dirname(os.path.abspath(__file__))
     db_path = os.path.join(base_dir, "volt.db")
     
@@ -1932,29 +1931,32 @@ def process_coin_transfer(sender_id: int, receiver_id: int, amount: int) -> tupl
     cursor = conn.cursor()
     
     try:
-        # Rozpoczynamy transakcję - jeśli cokolwiek pójdzie nie tak, baza wycofa wszystkie zmiany
+        # Rozpoczynamy transakcję
         cursor.execute("BEGIN TRANSACTION;")
         
-        # 1. Upewniamy się, że obaj użytkownicy istnieją w bazie (INSERT OR IGNORE)
-        # Jeśli już są, SQLite po prostu pominie ten krok.
         cursor.execute("INSERT OR IGNORE INTO economy (user_id, balance, last_daily, streak) VALUES (?, 0, 0, 0)", (sender_id,))
         cursor.execute("INSERT OR IGNORE INTO economy (user_id, balance, last_daily, streak) VALUES (?, 0, 0, 0)", (receiver_id,))
         
-        # 2. Pobieramy i sprawdzamy stan konta nadawcy
         cursor.execute("SELECT balance FROM economy WHERE user_id = ?", (sender_id,))
         sender_balance = cursor.fetchone()[0]
         
         if sender_balance < amount:
-            conn.rollback() # Anulujemy transakcję
+            conn.rollback()
             return "insufficient_funds", "You do not have enough coins to complete this transfer."
             
-        # 3. Wykonujemy transfer (Aktualizacja obu kont)
         cursor.execute("UPDATE economy SET balance = balance - ? WHERE user_id = ?", (amount, sender_id))
         cursor.execute("UPDATE economy SET balance = balance + ? WHERE user_id = ?", (amount, receiver_id))
         
-        # Zatwierdzamy całą operację na raz
         conn.commit()
         return "success", ""
+        
+    except Exception as e:
+        conn.rollback()
+        print(f"🔴 [DB TRANSFER ERROR]: {e}")
+        return "error", str(e)
+        
+    finally:
+        conn.close()
         
     except Exception as e:
         conn.rollback() # W razie awarii prądu lub pliku - cofamy zmiany, żeby nikomu nie zniknęły monety
