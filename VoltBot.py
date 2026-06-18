@@ -204,6 +204,17 @@ def init_db():
             streak INTEGER DEFAULT 0
         );
     """)
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS levels (
+            user_id INTEGER PRIMARY KEY,
+            xp INTEGER DEFAULT 0,
+            level INTEGER DEFAULT 0
+        );
+    """)
+    
+    conn.commit()
+    conn.close()
     
     conn.commit()
     conn.close()
@@ -1911,278 +1922,523 @@ async def work(interaction: discord.Interaction):
 
     await interaction.response.send_message(embed=embed)
 
-@bot.tree.command(name="pay", description="Send coins to another user")
+def process_coin_transfer(sender_id: int, receiver_id: int, amount: int) -> tuple[str, str]:
+    """Przetwarza przelew monet wewnątrz bezpiecznej transakcji. 
+    Zwraca status ('success', 'insufficient_funds', 'error') oraz ewentualny komunikat błędu."""
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    db_path = os.path.join(base_dir, "volt.db")
+    
+    conn = sqlite3.connect(db_path, timeout=10)
+    cursor = conn.cursor()
+    
+    try:
+        # Rozpoczynamy transakcję - jeśli cokolwiek pójdzie nie tak, baza wycofa wszystkie zmiany
+        cursor.execute("BEGIN TRANSACTION;")
+        
+        # 1. Upewniamy się, że obaj użytkownicy istnieją w bazie (INSERT OR IGNORE)
+        # Jeśli już są, SQLite po prostu pominie ten krok.
+        cursor.execute("INSERT OR IGNORE INTO economy (user_id, balance, last_daily, streak) VALUES (?, 0, 0, 0)", (sender_id,))
+        cursor.execute("INSERT OR IGNORE INTO economy (user_id, balance, last_daily, streak) VALUES (?, 0, 0, 0)", (receiver_id,))
+        
+        # 2. Pobieramy i sprawdzamy stan konta nadawcy
+        cursor.execute("SELECT balance FROM economy WHERE user_id = ?", (sender_id,))
+        sender_balance = cursor.fetchone()[0]
+        
+        if sender_balance < amount:
+            conn.rollback() # Anulujemy transakcję
+            return "insufficient_funds", "You do not have enough coins to complete this transfer."
+            
+        # 3. Wykonujemy transfer (Aktualizacja obu kont)
+        cursor.execute("UPDATE economy SET balance = balance - ? WHERE user_id = ?", (amount, sender_id))
+        cursor.execute("UPDATE economy SET balance = balance + ? WHERE user_id = ?", (amount, receiver_id))
+        
+        # Zatwierdzamy całą operację na raz
+        conn.commit()
+        return "success", ""
+        
+    except Exception as e:
+        conn.rollback() # W razie awarii prądu lub pliku - cofamy zmiany, żeby nikomu nie zniknęły monety
+        print(f"🔴 [DB TRANSFER ERROR]: {e}")
+        return "error", str(e)
+    finally:
+        conn.close()
+
+@bot.tree.command(name="pay", description="Transfer a specific amount of Volt Coins to another server member")
 @premium_only()
 @app_commands.describe(
-    user="User to send coins to",
-    amount="Amount of coins"
+    user="The member you want to send coins to",
+    amount="The amount of coins to transfer"
 )
-async def pay(
-    interaction: discord.Interaction,
-    user: discord.Member,
-    amount: int
-):
-    
+async def pay(interaction: discord.Interaction, user: discord.Member, amount: int):
+    # 1. Zabezpieczenie: Kwota musi być większa od zera
     if amount <= 0:
-        await interaction.response.send_message(
-            "Amount must be greater than 0.",
-            ephemeral=True
-        )
+        await interaction.response.send_message("❌ The transfer amount must be greater than 0.", ephemeral=True)
         return
-    
+
+    # 2. Zabezpieczenie: Nie można przelać pieniędzy samemu sobie
+    if user.id == interaction.user.id:
+        await interaction.response.send_message("⚠️ You cannot send Volt Coins to yourself!", ephemeral=True)
+        return
+
+    # 3. Zabezpieczenie: Nie można przelewać monet botom
+    if user.bot:
+        await interaction.response.send_message("⚠️ Bot accounts cannot hold wallets or receive currency.", ephemeral=True)
+        return
+
+    # Informujemy Discord, że bot przetwarza transakcję bankową
+    await interaction.response.defer(ephemeral=False)
+
     sender_id = interaction.user.id
     receiver_id = user.id
 
-    ensure_user(sender_id)
-    ensure_user(receiver_id)
+    # Uruchamiamy bezpieczny transfer w osobnym wątku systemowym
+    status, error_msg = await asyncio.to_thread(process_coin_transfer, sender_id, receiver_id, amount)
 
-    cursor.execute(
-        "SELECT balance FROM economy WHERE user_id = ?",
-        (sender_id,)
-    )
-
-    sender_balance = cursor.fetchone()[0]
-
-    if sender_balance < amount:
-        await interaction.response.send_message(
-            "You dont have enough coins.",
-            ephemeral=True
+    if status == "insufficient_funds":
+        embed_poor = discord.Embed(
+            title="❌ Transaction Declined",
+            description=f"You do not have enough coins.\nRequired: **{amount:,}** coins.",
+            color=discord.Color.red()
         )
+        await interaction.followup.send(embed=embed_poor, ephemeral=True)
         return
+        
+    elif status == "error":
+        await interaction.followup.send(f"❌ Bank system error during transfer: `{error_msg}`", ephemeral=True)
+        return
+
+    # Status: Success - Budujemy piękny, zielony Embed udanej transakcji
+    embed_success = discord.Embed(
+        title="💸 Transfer Successful!",
+        description=f"Funds have been securely moved between accounts.",
+        color=discord.Color.green()
+    )
+    embed_success.add_field(name="📤 Sender", value=interaction.user.mention, inline=True)
+    embed_success.add_field(name="📥 Receiver", value=user.mention, inline=True)
+    embed_success.add_field(name="💰 Amount Transferred", value=f"**{amount:,}** Volt Coins", inline=False)
     
-    cursor.execute(
-      "UPDATE economy SET balance = balance - ? WHERE user_id = ?",
-      (amount, sender_id)
-    )
+    # Ustawiamy awatar odbiorcy, żeby było widać do kogo poszła kasa
+    embed_success.set_thumbnail(url=user.display_avatar.url)
+    embed_success.set_footer(text="VoltBot Banking Protocol", icon_url=bot.user.display_avatar.url)
 
-    cursor.execute(
-       "UPDATE economy SET balance = balance + ? WHERE user_id = ?",
-       (amount, receiver_id)
-    )
+    await interaction.followup.send(embed=embed_success)
 
-    conn.commit()
+def get_detailed_user_stats(user_id: int) -> tuple[int, int, int]:
+    """Zwraca (balance, streak, last_daily) dla danego użytkownika."""
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    db_path = os.path.join(base_dir, "volt.db")
+    
+    conn = sqlite3.connect(db_path, timeout=10)
+    cursor = conn.cursor()
+    
+    try:
+        # Zaciągamy od razu komplet danych ekonomicznych
+        cursor.execute("SELECT balance, streak, last_daily FROM economy WHERE user_id = ?", (user_id,))
+        row = cursor.fetchone()
+        
+        if row:
+            return row[0], row[1], row[2]
+        return 0, 0, 0 # Jeśli użytkownika nie ma w bazie, zwracamy same zera
+    finally:
+        conn.close()
 
-    await interaction.response.send_message(
-        f"{interaction.user.mention} sent **{amount}** coins to {user.mention}!"
-    )
+@bot.tree.command(name="stats", description="View comprehensive economic profile and stats for a member")
+@app_commands.describe(user="Select a member to view stats (Leave blank to view your own)")
+async def stats(interaction: discord.Interaction, user: discord.Member = None):
+    # Deferujemy odpowiedź bota
+    await interaction.response.defer(ephemeral=False)
 
-@bot.tree.command(name="stats", description="View economy stats")
-async def stats(
-    interaction: discord.Interaction,
-    user: Optional[discord.Member] = None
-):
+    # Domyślnie sprawdzamy osobę wpisującą komendę
+    target_user = user or interaction.user
 
-    if user is None:
-        user = interaction.user
+    try:
+        # Pobieramy dane w osobnym wątku
+        balance, streak, last_daily = await asyncio.to_thread(get_detailed_user_stats, target_user.id)
+        
+        # Obliczamy status Daily Reward
+        now = int(time.time())
+        cooldown = 86400 # 24 godziny
+        
+        if last_daily == 0:
+            daily_status = "🟢 Ready to claim! (`/daily`)"
+        elif (now - last_daily) >= cooldown:
+            daily_status = "🟢 Ready to claim! (`/daily`)"
+        else:
+            next_claim = last_daily + cooldown
+            daily_status = f"⏳ Available <t:{next_claim}:R>"
 
-    ensure_user(user.id)
+        # Tworzymy profesjonalny Embed statystyk
+        embed = discord.Embed(
+            title=f"📊 Financial Profile — {target_user.name}",
+            color=0x00fff0 # Twój neonowy błękit VoltBota
+        )
+        
+        # Sekcja finansów i aktywności
+        embed.add_field(name="💳 Net Worth", value=f"**{balance:,}** Volt Coins", inline=True)
+        embed.add_field(name="🔥 Daily Streak", value=f"`{streak} Day(s)`", inline=True)
+        embed.add_field(name="🎁 Daily Reward Status", value=daily_status, inline=False)
+        
+        # Smaczek: typ konta
+        account_type = "🤖 System Bot" if target_user.bot else "👤 Server Member"
+        embed.add_field(name="🗂️ Account Type", value=f"`{account_type}`", inline=True)
+        embed.add_field(name="🆔 ID", value=f"`{target_user.id}`", inline=True)
 
-    cursor.execute(
-        "SELECT balance FROM economy WHERE user_id = ?",
-        (user.id,)
-    )
+        embed.set_thumbnail(url=target_user.display_avatar.url)
+        embed.set_footer(
+            text=f"Requested by {interaction.user.name} • Volt Ledger", 
+            icon_url=interaction.user.display_avatar.url
+        )
 
-    result = cursor.fetchone()
+        await interaction.followup.send(embed=embed)
 
-    if result is None:
-        balance = 0
-    else:
-        balance = result[0]
+    except Exception as e:
+        print(f"❌ [STATS CMD ERROR] {e}")
+        await interaction.followup.send(f"❌ Error while generating statistics: `{e}`", ephemeral=True)
 
-    await interaction.response.send_message(
-        f"Stats for **{user.display_name}**\n\n"
-        f"Balance: **{balance} coins**"
-    )
+def process_unwarn(guild_id: int, user_id: int) -> tuple[bool, int]:
+    """Usuwa najnowsze ostrzeżenie użytkownika na danym serwerze.
+    Zwraca krotkę: (czy_usunięto, liczba_pozostałych_warnów)."""
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    db_path = os.path.join(base_dir, "volt.db")
+    
+    conn = sqlite3.connect(db_path, timeout=10)
+    cursor = conn.cursor()
+    
+    try:
+        # 1. Szukamy ID najnowszego ostrzeżenia, filtrując TYLKO po obecnym serwerze
+        cursor.execute(
+            "SELECT id FROM warnings WHERE guild_id = ? AND user_id = ? ORDER BY id DESC LIMIT 1",
+            (str(guild_id), str(user_id))
+        )
+        row = cursor.fetchone()
+        
+        if not row:
+            # Użytkownik nie ma żadnych warnów na tym serwerze
+            return False, 0
+            
+        latest_warn_id = row[0]
+        
+        # 2. Usuwamy dokładnie to jedno konkretne ostrzeżenie
+        cursor.execute("DELETE FROM warnings WHERE id = ?", (latest_warn_id,))
+        conn.commit()
+        
+        # 3. Zliczamy ile ostrzeżeń mu jeszcze zostało NA TYM SERWERZE
+        cursor.execute(
+            "SELECT COUNT(*) FROM warnings WHERE guild_id = ? AND user_id = ?",
+            (str(guild_id), str(user_id))
+        )
+        remaining_count = cursor.fetchone()[0]
+        
+        return True, remaining_count
+        
+    finally:
+        conn.close()
 
-@bot.tree.command(name="unwarn", description="Remove the latest warning from a user")
-@app_commands.describe(user="User to unwarn")
+@bot.tree.command(name="unwarn", description="Remove the most recent warning from a server member")
+@app_commands.describe(user="The member whose latest warning you want to pardon")
 async def unwarn(interaction: discord.Interaction, user: discord.Member):
-
-    if not interaction.user.guild_permissions.kick_members:
-        await interaction.response.send_message(
-            "You don't have permission.",
-            ephemeral=True
+    # 1. Sprawdzenie uprawnień moderatora (Spójne z /timeout i /warn)
+    if not interaction.user.guild_permissions.moderate_members:
+        embed_no_perm = discord.Embed(
+            title="❌ Permission Denied",
+            description="You need the **Timeout Members** (`moderate_members`) permission to use this command.",
+            color=discord.Color.red()
         )
+        await interaction.response.send_message(embed=embed_no_perm, ephemeral=True)
         return
 
-    cursor.execute(
-        "SELECT rowid FROM warnings WHERE user_id = ? ORDER BY rowid DESC LIMIT 1",
-        (user.id,)
-    )
-
-    row = cursor.fetchone()
-
-    if not row:
-        await interaction.response.send_message(
-            f"{user.mention} has no warnings."
-        )
+    # Zabezpieczenie przed użyciem w DM
+    if not interaction.guild_id:
+        await interaction.response.send_message("❌ This command can only be used inside a server.", ephemeral=True)
         return
 
-    cursor.execute(
-        "DELETE FROM warnings WHERE rowid = ?",
-        (row[0],)
-    )
+    # Deferujemy odpowiedź, bo modyfikujemy plik bazy danych
+    await interaction.response.defer(ephemeral=False)
 
-    conn.commit()
+    guild_id = interaction.guild_id
+    user_id = user.id
 
-    cursor.execute(
-        "SELECT COUNT(*) FROM warnings WHERE user_id = ?",
-        (user.id,)
-    )
+    try:
+        # Odpalamy bezpieczny proces usuwania w tle
+        was_removed, remaining_warns = await asyncio.to_thread(process_unwarn, guild_id, user_id)
+        
+        if not was_removed:
+            embed_clean = discord.Embed(
+                title="🛡️ Operation Cancelled",
+                description=f"{user.mention} does not have any active warnings on this server.",
+                color=discord.Color.orange()
+            )
+            await interaction.followup.send(embed=embed_clean)
+            return
 
-    remaining = cursor.fetchone()[0]
-
-    await interaction.response.send_message(
-        f"Removed latest warning from {user.mention}\n"
-        f"Remaining warnings: **{remaining}**"
-    )
-
-
-@bot.tree.command(name="rank", description="Check your level")
-@premium_only()
-async def rank(
-    interaction: discord.Interaction,
-    user: discord.Member = None
-):
-
-    user = user or interaction.user
-
-    cursor.execute(
-        "SELECT xp, level FROM levels WHERE user_id = ?",
-        (user.id,)
-    )
-
-    row = cursor.fetchone()
-
-    if not row:
-        await interaction.response.send_message(
-            "No rank data yet."
+        # Budujemy piękny log sukcesu w Embedzie
+        embed_success = discord.Embed(
+            title="⚖️ Warning Pardoned",
+            description=f"The most recent infraction for {user.mention} has been successfully expunged.",
+            color=discord.Color.green()
         )
-        return
+        embed_success.add_field(name="👤 Target", value=f"{user.mention} (`{user.id}`)", inline=True)
+        embed_success.add_field(name="🛡️ Moderator", value=interaction.user.mention, inline=True)
+        embed_success.add_field(name="📊 Remaining Warnings", value=f"`{remaining_warns}` active warnings", inline=False)
+        
+        embed_success.set_thumbnail(url=user.display_avatar.url)
+        embed_success.set_footer(text="VoltBot Moderation Core", icon_url=bot.user.display_avatar.url)
 
-    xp, level = row
+        await interaction.followup.send(embed=embed_success)
 
-    needed_xp = (level + 1) * 100
+    except Exception as e:
+        print(f"❌ [UNWARN CMD ERROR] {e}")
+        await interaction.followup.send(f"❌ An error occurred while removing the warning: `{e}`", ephemeral=True)
 
-    percent = xp / needed_xp
+def get_user_rank_data(user_id: int) -> tuple[int, int] | None:
+    """Pobiera (xp, level) dla użytkownika. Zwraca None, jeśli użytkownik nie ma jeszcze danych."""
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    db_path = os.path.join(base_dir, "volt.db")
+    
+    conn = sqlite3.connect(db_path, timeout=10)
+    cursor = conn.cursor()
+    
+    try:
+        cursor.execute("SELECT xp, level FROM levels WHERE user_id = ?", (user_id,))
+        return cursor.fetchone()
+    finally:
+        conn.close()
 
-    filled = int(percent * 10)
-    empty = 10 - filled
+@bot.tree.command(name="rank", description="Check your or another member's current level and XP progress")
+@premium_only() # Komenda tylko dla serwerów Premium!
+@app_commands.describe(user="Select a member to check their rank (Leave blank to check your own)")
+async def rank(interaction: discord.Interaction, user: discord.Member = None):
+    # Deferujemy odpowiedź bota, dbając o płynność API
+    await interaction.response.defer(ephemeral=False)
 
-    progress_bar = "█" * filled + "░" * empty
+    target_user = user or interaction.user
 
-    embed = discord.Embed(
-        title=f"{user.display_name}'s Rank",
-        color=discord.Color.gold()
-    )
+    try:
+        # Pobieramy dane z bazy w bezpiecznym, osobnym wątku
+        row = await asyncio.to_thread(get_user_rank_data, target_user.id)
 
-    embed.add_field(
-        name="Level",
-        value=str(level),
-        inline=True
-    )
+        if not row:
+            # Zamiast brzydkiego suchego tekstu, wysyłamy ładny, informacyjny Embed
+            embed_no_data = discord.Embed(
+                title="📈 No Rank Data",
+                description=f"{target_user.mention} hasn't earned any XP yet. Start chatting to gain experience!",
+                color=discord.Color.orange()
+            )
+            await interaction.followup.send(embed=embed_no_data)
+            return
 
-    embed.add_field(
-        name="XP",
-        value=f"{xp}/{needed_xp}",
-        inline=True
-    )
+        xp, level = row
 
-    embed.add_field(
-        name="Progress",
-        value=f"`{progress_bar}` {int(percent * 100)}%",
-        inline=False
-    )
+        # Matematyka XP (Twój wzór: na każdy poziom potrzeba (level + 1) * 100 XP)
+        needed_xp = (level + 1) * 100
+        
+        # Obliczamy procent i zabezpieczamy, żeby nie wykroczył poza przedział 0.0 - 1.0
+        percent = min(max(xp / needed_xp, 0.0), 1.0)
 
-    await interaction.response.send_message(embed=embed)
-@bot.tree.command(name="topxp", description="Top users by level")
+        # Generowanie paska postępu (Zawsze dokładnie 10 znaków)
+        filled = int(percent * 10)
+        empty = 10 - filled
+        progress_bar = "█" * filled + "░" * empty
+        
+        percent_display = int(percent * 100)
+
+        # Budujemy nowoczesny, złoty panel profilu XP
+        embed = discord.Embed(
+            title=f"🏆 {target_user.name}'s Rank Progression",
+            color=0x00fff0 # Twój neonowy błękit VoltBota
+        )
+
+def get_top_xp_data(limit: int = 10) -> list[tuple[int, int, int]]:
+    """Pobiera listę najlepszych użytkowników posortowaną po poziomie i XP."""
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    db_path = os.path.join(base_dir, "volt.db")
+    
+    conn = sqlite3.connect(db_path, timeout=10)
+    cursor = conn.cursor()
+    
+    try:
+        cursor.execute("""
+            SELECT user_id, level, xp FROM levels
+            ORDER BY level DESC, xp DESC
+            LIMIT ?
+        """, (limit,))
+        return cursor.fetchall()
+    finally:
+        conn.close()
+
+@bot.tree.command(name="topxp", description="Display the global server leaderboard by level and XP")
 async def topxp(interaction: discord.Interaction):
+    # Deferujemy odpowiedź, bo pobieranie profili użytkowników może chwilę zająć
+    await interaction.response.defer(ephemeral=False)
 
-    cursor.execute("""
-        SELECT user_id, level, xp FROM levels
-        ORDER BY level DESC, xp DESC
-        LIMIT 10
-    """)
+    try:
+        # 1. Pobieramy dane z bazy w osobnym wątku
+        rows = await asyncio.to_thread(get_top_xp_data, 10)
 
-    rows = cursor.fetchall()
+        if not rows:
+            embed_empty = discord.Embed(
+                title="📈 XP Leaderboard",
+                description="No rank data has been recorded on this server yet.",
+                color=discord.Color.orange()
+            )
+            await interaction.followup.send(embed=embed_empty)
+            return
 
-    if not rows:
-        await interaction.response.send_message("No data yet.")
-        return
+        # Podgrupka ikon dla TOP 3 graczy (amerykańscy gracze uwielbiają te smaczki)
+        badges = {1: "🥇", 2: "🥈", 3: "🥉"}
+        description_lines = []
 
-    embed = discord.Embed(
-        title="Top XP Users",
-        color=discord.Color.gold()
-    )
+        # 2. Budujemy listę rankingową z optymalnym pobieraniem użytkowników
+        for i, (user_id, level, xp) in enumerate(rows, start=1):
+            badge = badges.get(i, f"`#{i}`")
+            
+            # Najpierw szukamy w pamięci podręcznej (0 ms opóźnienia)
+            user = bot.get_user(user_id)
+            
+            # Jeśli nie ma w cache, dopiero wtedy pytamy API Discorda
+            if not user:
+                try:
+                    user = await bot.fetch_user(user_id)
+                except discord.NotFound:
+                    username = f"Deleted User ({user_id})"
+                except Exception:
+                    username = f"Unknown User ({user_id})"
+            
+            if user:
+                username = user.name
 
-    description = ""
+            # Formatowanie linijki rankingu
+            description_lines.append(
+                f"{badge} **{username}** — Level `{level}` *(Total: {xp:,} XP)*"
+            )
 
-    for i, (user_id, level, xp) in enumerate(rows, start=1):
+        # 3. Tworzymy elegancki Embed rankingu
+        embed = discord.Embed(
+            title="🏆 VoltBot Global Experience Leaderboard",
+            description="\n".join(description_lines),
+            color=0x00fff0 # Neonowy błękit bota
+        )
+        
+        # Pobieramy ikonę serwera na miniaturkę, jeśli istnieje
+        if interaction.guild and interaction.guild.icon:
+            embed.set_thumbnail(url=interaction.guild.icon.url)
+            
+        embed.set_footer(
+            text=f"Requested by {interaction.user.name} • Live Leaderboard Updates", 
+            icon_url=interaction.user.display_avatar.url
+        )
 
-        user = await bot.fetch_user(user_id)
+        await interaction.followup.send(embed=embed)
 
-        description += f"**{i}. {user.name}** — Level {level} ({xp} XP)\n"
+    except Exception as e:
+        print(f"❌ [TOPXP CMD ERROR] {e}")
+        await interaction.followup.send(f"❌ An error occurred while generating the leaderboard: `{e}`", ephemeral=True)
 
-    embed.description = description
+def process_coinflip_gamble(user_id: int, bet_amount: int) -> tuple[str, dict]:
+    """Przetwarza rzut monetą wewnątrz bezpiecznej transakcji.
+    Zwraca status ('insufficient_funds', 'win', 'lose', 'error') oraz szczegóły finansowe."""
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    db_path = os.path.join(base_dir, "volt.db")
+    
+    conn = sqlite3.connect(db_path, timeout=10)
+    cursor = conn.cursor()
+    
+    try:
+        cursor.execute("BEGIN TRANSACTION;")
+        
+        # 1. Rejestrujemy użytkownika w bazie (na wypadek gdyby grał po raz pierwszy)
+        cursor.execute("INSERT OR IGNORE INTO economy (user_id, balance, last_daily, streak) VALUES (?, 0, 0, 0)", (user_id,))
+        
+        # 2. Pobieramy i weryfikujemy stan portfela
+        cursor.execute("SELECT balance FROM economy WHERE user_id = ?", (user_id,))
+        current_balance = cursor.fetchone()[0]
+        
+        if current_balance < bet_amount:
+            conn.rollback()
+            return "insufficient_funds", {"balance": current_balance}
+            
+        # 3. Losowanie wyniku (Fizyczny rzut: Heads lub Tails)
+        outcome = random.choice(["Heads", "Tails"])
+        
+        # Ustalamy 50% szans na wygraną bota
+        is_winner = random.choice([True, False])
+        
+        if is_winner:
+            new_balance = current_balance + bet_amount
+            cursor.execute("UPDATE economy SET balance = balance + ? WHERE user_id = ?", (bet_amount, user_id))
+            status = "win"
+        else:
+            new_balance = current_balance - bet_amount
+            cursor.execute("UPDATE economy SET balance = balance - ? WHERE user_id = ?", (bet_amount, user_id))
+            status = "lose"
+            
+        conn.commit()
+        return status, {"outcome": outcome, "new_balance": new_balance}
+        
+    except Exception as e:
+        conn.rollback()
+        print(f"🔴 [DB COINFLIP ERROR]: {e}")
+        return "error", {"error_msg": str(e)}
+    finally:
+        conn.close()
 
-    await interaction.response.send_message(embed=embed)
-
-@bot.tree.command(name="coinflip", description="Flip  a coin and gamble your coins")
+@bot.tree.command(name="coinflip", description="Flip a coin and gamble your Volt Coins with a 50/50 chance")
 @premium_only()
-@app_commands.describe(amount="Amount of coins to bet")
-async def coinflip(
-    interaction: discord.Interaction,
-    amount: int
-):
-    
+@app_commands.describe(amount="The amount of coins you want to wager")
+async def coinflip(interaction: discord.Interaction, amount: int):
+    # 1. Zabezpieczenie: Zakład musi być większy od zera
     if amount <= 0:
-        await interaction.response.send_message(
-            "Amount must be greater than 0",
-            ephemeral=True
-        )
+        await interaction.response.send_message("❌ Your wager must be greater than 0 coins.", ephemeral=True)
         return
+
+    # Informujemy Discord o przetwarzaniu losowania gry
+    await interaction.response.defer(ephemeral=False)
+
     user_id = interaction.user.id
-    
-    ensure_user(user_id)
 
-    cursor.execute(
-        "SELECT balance FROM economy WHERE user_id = ?",
-        (user_id,)
-    )
+    # Uruchamiamy obliczenia hazardowe w tle, dbając o brak lagów u innych graczy
+    status, data = await asyncio.to_thread(process_coinflip_gamble, user_id, amount)
 
-    balance = cursor.fetchone()[0]
-
-    if balance < amount:
-        await interaction.response.send_message(
-            "You don't have enough coins.",
-            ephemeral=True
+    if status == "insufficient_funds":
+        embed_poor = discord.Embed(
+            title="❌ Bet Rejected",
+            description=f"You do not have enough coins to place this wager.\nYour balance: **{data['balance']:,}** coins.",
+            color=discord.Color.red()
         )
+        await interaction.followup.send(embed=embed_poor, ephemeral=True)
         return
-    won = random.choice([True, False])
+        
+    elif status == "error":
+        await interaction.followup.send(f"❌ Casino engine error: `{data['error_msg']}`", ephemeral=True)
+        return
 
-    if won:
-        cursor.execute(
-            "UPDATE economy SET balance = balance + ? WHERE user_id = ?",
-            (amount, user_id)
+    # Wyciągamy dane o wyniku gry
+    coin_side = data["outcome"]
+    new_balance = data["new_balance"]
+
+    if status == "win":
+        embed_win = discord.Embed(
+            title="🟩 YOU WON!",
+            description=f"The coin spun through the air and landed on **{coin_side.upper()}**!",
+            color=discord.Color.green()
         )
-
-        conn.commit()
-
-        await interaction.response.send_message(
-            f"Coin landed on **HEADS**!\nYou won **{amount} coins**"
+        embed_win.add_field(name="💰 Earnings", value=f"**+{amount:,}** Volt Coins", inline=True)
+        embed_win.add_field(name="💳 New Balance", value=f"**{new_balance:,}** coins", inline=True)
+        embed_win.set_footer(text="VoltBot Entertainment Hub • Fortune favors the bold")
+        
+        await interaction.followup.send(embed=embed_win)
+        
+    else: # status == "lose"
+        embed_lose = discord.Embed(
+            title="🟥 YOU LOST",
+            description=f"The coin spun through the air and landed on **{coin_side.upper()}**...",
+            color=discord.Color.red()
         )
-
-    else:
-        cursor.execute(
-            "UPDATE economy SET balance = balance - ? WHERE user_id = ?",
-            (amount, user_id)
-        )
-
-        conn.commit()
-
-        await interaction.response.send_message(
-            f"Coin landed on **TAILS**!\nYou lost **{amount} coins**"
-        )
+        embed_lose.add_field(name="📉 Loss", value=f"**-{amount:,}** Volt Coins", inline=True)
+        embed_lose.add_field(name="💳 New Balance", value=f"**{new_balance:,}** coins", inline=True)
+        embed_lose.set_footer(text="VoltBot Entertainment Hub • House always wins")
+        
+        await interaction.followup.send(embed=embed_lose)
 
 @bot.tree.command(
     name="setwelcomechannel",
