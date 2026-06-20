@@ -7,7 +7,7 @@ from discord.ext import commands
 import asyncio
 import uvicorn
 from datetime import timedelta
-import sqlite3
+from motor.motor_asyncio import AsyncIOMotorClient
 import random 
 from typing import Optional
 import datetime
@@ -22,6 +22,14 @@ import collections
 
 user_last_vote = {}  # format: {user_id: datetime_object}
 
+MONGO_URI = os.getenv('MONGO_URI') 
+client = AsyncIOMotorClient(MONGO_URI)
+db = client.volt_database  # Nazwa Twojej bazy danych
+
+async def check_premium_db(guild_id):
+    # Znajdź dokument w kolekcji 'licenses' dla tego guild_id
+    license = await db.licenses.find_one({"guild_id": str(guild_id)})
+    return license is not None
 
 class VoteCommand(commands.Cog):
 
