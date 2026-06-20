@@ -357,16 +357,18 @@ def premium_only():
     async def predicate(interaction: discord.Interaction) -> bool:
         guild_id = interaction.guild_id
         if not guild_id:
-            await interaction.response.send_message("❌ This command cannot be used in DMs.", ephemeral=True)
+            await interaction.response.send_message("❌ DM is not supported.", ephemeral=True)
             return False
 
-        # Sprawdzamy stan licencji w osobnym wątku
-        has_premium = await asyncio.to_thread(check_premium_db, guild_id)
+        # Wymuszamy użycie funkcji, która czyta bazę
+        has_premium = check_premium_db(guild_id) 
+        
+        print(f"DEBUG: Checking premium for guild {guild_id}, result: {has_premium}")
         
         if not has_premium:
             await interaction.response.send_message(
                 "❌ **This feature requires Volt Premium!**\n"
-                "Please enter a valid license key using `/license_redeem` or visit our store.",
+                "Use `/license_redeem` to activate.",
                 ephemeral=True
             )
             return False
