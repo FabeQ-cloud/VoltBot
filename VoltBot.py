@@ -167,32 +167,39 @@ def init_db():
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     
-    # 1. Usuwamy stare, niedopasowane tabele (skoro i tak są puste)
-    cursor.execute("DROP TABLE IF EXISTS subscriptions;")
-    cursor.execute("DROP TABLE IF EXISTS license_keys;")
-    cursor.execute("DROP TABLE IF EXISTS warnings;") # Resetujemy też stare warnings pod serwery
-    
-    # 2. Tabela: Wygenerowane i używane licencje (Premium na serwer pod /ticket)
+    # 1. Licencje (Premium)
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS licenses (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             license_key TEXT UNIQUE NOT NULL,
             duration_days INTEGER NOT NULL,
             is_used INTEGER DEFAULT 0,
-            used_by_user_id TEXT,  -- Tutaj ląduje guild_id (ID serwera)
+            used_by_user_id TEXT,
             expires_at INTEGER
         )
     """)
 
+    # 2. Ekonomia
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS welcome_config (
-            guild_id TEXT PRIMARY KEY,
-            welcome_channel TEXT,
-            leave_channel TEXT
-        );
+        CREATE TABLE IF NOT EXISTS economy (
+            user_id INTEGER PRIMARY KEY,
+            balance INTEGER DEFAULT 0,
+            last_daily INTEGER DEFAULT 0,
+            streak INTEGER DEFAULT 0
+        )
     """)
-    
-    # 3. Tabela: Ostrzeżenia (Wersja bezpieczna, wieloserwerowa)
+
+    # 3. Poziomy (Leveling) - TO JEST DLA CIEBIE KLUCZOWE
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS levels (
+            user_id INTEGER PRIMARY KEY,
+            xp INTEGER DEFAULT 0,
+            level INTEGER DEFAULT 0,
+            last_message REAL DEFAULT 0
+        )
+    """)
+
+    # 4. Ostrzeżenia
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS warnings (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -203,48 +210,12 @@ def init_db():
         )
     """)
     
-    # 4. Tabela: Ekonomia (Dbamy o to, żeby była, jeśli jej używasz)
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS economy (
-            user_id INTEGER PRIMARY KEY,
-            balance INTEGER DEFAULT 0,
-            last_daily INTEGER DEFAULT 0,
-            streak INTEGER DEFAULT 0
-        );
-    """)
-
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS level_rewards (
-            guild_id TEXT NOT NULL,
-            level INTEGER NOT NULL,
-            role_id TEXT NOT NULL,
-            PRIMARY KEY (guild_id, level)
-        );
-    """)
-    
     conn.commit()
     conn.close()
-    
-    print("✨ [DATABASE] Wszystkie tabele w volt.db zostały pomyślnie zsynchronizowane z kodem!")
+    print("✅ [DATABASE] Wszystkie tabele (w tym levels) zostały poprawnie sprawdzone/utworzone!")
 
-# Uruchamiamy tworzenie i aktualizację tabel przy starcie
+# Uruchom to tylko raz!
 init_db()
-
-def init_subs_db():
-    conn = sqlite3.connect("volt.db")
-    cursor = conn.cursor()
-    # Tabela przechowuje ID użytkownika oraz czas (Timestamp Unix), do kiedy ważne jest Premium
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS subscriptions (
-            user_id INTEGER PRIMARY KEY,
-            premium_until INTEGER
-        )
-    """)
-    conn.commit()
-    conn.close()
-
-# Wywołaj tę funkcję przy starcie bota:
-init_subs_db()
 
 def check_premium_db(guild_id: int) -> bool:
     conn = sqlite3.connect("volt.db")
