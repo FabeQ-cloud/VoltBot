@@ -73,17 +73,6 @@ COMMANDS = [
     ("/ticket", "Open support ticket"),
 ]
 
-try:
-    cursor.execute("ALTER TABLE economy ADD COLUMN last_work REAL DEFAULT 0")
-except sqlite3.OperationalError:
-    pass
-
-conn.commit()
-
-conn.commit()
-
-conn.commit()
-
 def init_db():
     print("DEBUG: Rozpoczynam inicjalizację bazy...")
     base_dir = os.path.dirname(os.path.abspath(__file__))
@@ -136,6 +125,11 @@ def init_db():
             timestamp INTEGER
         )
     """)
+    
+    try:
+        cursor.execute("ALTER TABLE economy ADD COLUMN last_work REAL DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass
     
     conn.commit()
     conn.close()
