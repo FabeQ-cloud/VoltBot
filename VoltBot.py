@@ -40,9 +40,13 @@ class VoltBot(discord.Client):
         self.tree = app_commands.CommandTree(self)
 
     async def setup_hook(self):
-        # To jest najlepsze miejsce na synchronizację
+        # 1. Tu wywołujemy inicjalizację bazy – to zadziała na 100%
+        init_db() 
+        
+        # 2. Synchronizacja komend
         synced = await self.tree.sync()
         print(f"[✅] Zsynchronizowano {len(synced)} komend!")
+        print(f"[✅] Baza danych zainicjalizowana.")
 
     async def on_ready(self):
         print(f"[🚀] Zalogowano jako {self.user}!")
@@ -216,9 +220,6 @@ def init_db():
     conn.commit()
     conn.close()
     print("✅ [DATABASE] Wszystkie tabele (w tym levels) zostały poprawnie sprawdzone/utworzone!")
-
-# Uruchom to tylko raz!
-init_db()
 
 def check_premium_db(guild_id: int) -> bool:
     conn = sqlite3.connect("volt.db")
