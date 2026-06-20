@@ -246,12 +246,6 @@ def init_subs_db():
 # Wywołaj tę funkcję przy starcie bota:
 init_subs_db()
 
-cursor.execute("""
-    UPDATE licenses 
-    SET is_used = 1, used_by_user_id = ?, expires_at = ? 
-    WHERE license_key = ?
-""", (str(user_id), expiry_timestamp, clean_key))
-
 def check_premium_db(guild_id: int) -> bool:
     conn = sqlite3.connect("volt.db")
     cursor = conn.cursor()
@@ -268,44 +262,30 @@ def check_premium_db(guild_id: int) -> bool:
             return True
     return False
     
-def redeem_key_logic(user_id, input_key):
+def redeem_key_logic(guild_id: int, input_key: str):
     base_dir = os.path.dirname(os.path.abspath(__file__))
     db_path = os.path.join(base_dir, "volt.db")
     
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     
-    # Szukamy klucza (czyszcząc spacje)
-    clean_key = input_key.strip()
-    cursor.execute("SELECT days FROM license_keys WHERE key_code = ?", (clean_key,))
+    # 1. Sprawdź czy klucz istnieje w tabeli 'licenses'
+    cursor.execute("SELECT id, duration_days, is_used FROM licenses WHERE license_key = ?", (input_key.strip(),))
     row = cursor.fetchone()
     
-    if not row:
+    if not row or row[2] == 1: # Jeśli nie ma klucza lub jest już zużyty
         conn.close()
         return {"status": "invalid"}
         
-    days_to_add = row[0]
-    seconds_to_add = days_to_add * 24 * 60 * 60
-    now = int(time.time())
-    user_id_int = int(user_id)
+    db_id, days_to_add, _ = row
+    expiry_timestamp = int(time.time()) + (days_to_add * 24 * 60 * 60)
     
-    # Sprawdzamy, czy użytkownik ma już aktywne Premium
-    cursor.execute("SELECT premium_until FROM subscriptions WHERE user_id = ?", (user_id_int,))
-    sub_row = cursor.fetchone()
-    
-    if sub_row and sub_row[0] > now:
-        new_expiry = sub_row[0] + seconds_to_add  # Przedłużamy obecne premium
-    else:
-        new_expiry = now + seconds_to_add         # Premium leci od teraz
-        
-    # Zapisujemy subskrypcję
+    # 2. Zaktualizuj 'licenses' zamiast tworzyć 'subscriptions'
     cursor.execute("""
-        INSERT OR REPLACE INTO subscriptions (user_id, premium_until)
-        VALUES (?, ?)
-    """, (user_id_int, new_expiry))
-    
-    # Usuwamy zużyty klucz
-    cursor.execute("DELETE FROM license_keys WHERE key_code = ?", (clean_key,))
+        UPDATE licenses 
+        SET is_used = 1, used_by_user_id = ?, expires_at = ? 
+        WHERE id = ?
+    """, (str(guild_id), expiry_timestamp, db_id))
     
     conn.commit()
     conn.close()
