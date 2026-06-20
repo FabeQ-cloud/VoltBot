@@ -469,16 +469,18 @@ async def help(interaction: discord.Interaction):
         inline=False
     )
 
-    # 2. ECONOMY
+   # 2. ECONOMY & GAMBLING
     embed.add_field(
-        name="💰 Economy & Fun",
+        name="💰 Economy & Casino",
         value=(
-            "`/balance` • Check your current wallet and bank balance\n"
+            "`/balance` • Check your wallet balance\n"
             "`/work` • Shift work to earn steady cash\n"
-            "`/daily` • Claim your free daily coin allowance\n"
-            "`/pay` • Transfer coins securely to another user\n"
-            "`/leaderboard` • See who dominates the local economy\n"
-            "`/coinflip` • Gamble your coins on a 50/50 flip"
+            "`/daily` • Claim your free daily allowance\n"
+            "`/pay` • Transfer coins to another user\n"
+            "`/leaderboard` • Check the richest users\n"
+            "`/coinflip` • Gamble your coins on a 50/50 flip\n"
+            "`/dice` • Bet on a number between 1-6\n"
+            "`/slots` • Pull the lever on the Slot Machine"
         ),
         inline=False
     )
