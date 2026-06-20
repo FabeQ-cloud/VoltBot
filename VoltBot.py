@@ -161,6 +161,7 @@ conn.commit()
 conn.commit()
 
 def init_db():
+    print("DEBUG: Rozpoczynam inicjalizację bazy...")
     base_dir = os.path.dirname(os.path.abspath(__file__))
     db_path = os.path.join(base_dir, "volt.db")
     
@@ -178,6 +179,8 @@ def init_db():
             expires_at INTEGER
         )
     """)
+    conn.commit()
+    print("DEBUG: Tabela licenses powinna być gotowa.")
 
     # 2. Ekonomia
     cursor.execute("""
