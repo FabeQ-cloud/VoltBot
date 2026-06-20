@@ -7,7 +7,6 @@ from discord.ext import commands
 import asyncio
 import uvicorn
 from datetime import timedelta
-from motor.motor_asyncio import AsyncIOMotorClient
 import random 
 from typing import Optional
 import datetime
@@ -19,17 +18,9 @@ from dotenv import load_dotenv
 import contextlib
 from fastapi import FastAPI
 import collections
+import sqlite3
 
 user_last_vote = {}  # format: {user_id: datetime_object}
-
-MONGO_URI = os.getenv('MONGO_URI') 
-client = AsyncIOMotorClient(MONGO_URI)
-db = client.volt_database  # Nazwa Twojej bazy danych
-
-async def check_premium_db(guild_id):
-    # Znajdź dokument w kolekcji 'licenses' dla tego guild_id
-    license = await db.licenses.find_one({"guild_id": str(guild_id)})
-    return license is not None
 
 class VoteCommand(commands.Cog):
 
@@ -82,8 +73,9 @@ COMMANDS = [
     ("/ticket", "Open support ticket"),
 ]
 
-conn = sqlite3.connect("volt.db")
-cursor = conn.cursor()
+MONGO_URI = os.getenv('MONGO_URI')
+client = AsyncIOMotorClient(MONGO_URI)
+db = client.volt_bot
 
 
 
@@ -245,33 +237,28 @@ def check_premium_db(guild_id: int) -> bool:
             return True
     return False
     
-def redeem_key_logic(guild_id: int, input_key: str):
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    db_path = os.path.join(base_dir, "volt.db")
+async def redeem_key_logic(guild_id: int, input_key: str):
+    # 1. Szukamy klucza w kolekcji 'licenses'
+    # .find_one szuka dokumentu spełniającego warunek
+    license = await db.licenses.find_one({"license_key": input_key.strip()})
     
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-    
-    # 1. Sprawdź czy klucz istnieje w tabeli 'licenses'
-    cursor.execute("SELECT id, duration_days, is_used FROM licenses WHERE license_key = ?", (input_key.strip(),))
-    row = cursor.fetchone()
-    
-    if not row or row[2] == 1: # Jeśli nie ma klucza lub jest już zużyty
-        conn.close()
+    # Sprawdzamy czy istnieje i czy 'is_used' nie jest równe 1
+    if not license or license.get("is_used") == 1:
         return {"status": "invalid"}
         
-    db_id, days_to_add, _ = row
+    days_to_add = license.get("duration_days", 0)
     expiry_timestamp = int(time.time()) + (days_to_add * 24 * 60 * 60)
     
-    # 2. Zaktualizuj 'licenses' zamiast tworzyć 'subscriptions'
-    cursor.execute("""
-        UPDATE licenses 
-        SET is_used = 1, used_by_user_id = ?, expires_at = ? 
-        WHERE id = ?
-    """, (str(guild_id), expiry_timestamp, db_id))
-    
-    conn.commit()
-    conn.close()
+    # 2. Aktualizujemy rekord
+    # find_one_and_update to bardzo potężna funkcja w MongoDB
+    await db.licenses.find_one_and_update(
+        {"_id": license["_id"]}, # Znajdź po unikalnym ID dokumentu
+        {"$set": {
+            "is_used": 1,
+            "used_by_user_id": str(guild_id),
+            "expires_at": expiry_timestamp
+        }}
+    )
     
     return {"status": "success", "days": days_to_add}
 
