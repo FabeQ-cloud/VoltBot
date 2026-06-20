@@ -73,12 +73,6 @@ COMMANDS = [
     ("/ticket", "Open support ticket"),
 ]
 
-MONGO_URI = os.getenv('MONGO_URI')
-client = AsyncIOMotorClient(MONGO_URI)
-db = client.volt_bot
-
-
-
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS warnings (
     user_id INTEGER,
