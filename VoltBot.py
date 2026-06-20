@@ -96,6 +96,7 @@ def init_db():
     print("DEBUG: Tabela licenses powinna być gotowa.")
 
     # 2. Ekonomia
+# 2. Ekonomia
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS economy (
             user_id INTEGER PRIMARY KEY,
@@ -104,6 +105,12 @@ def init_db():
             streak INTEGER DEFAULT 0
         )
     """)
+    
+    # Dodanie brakującej kolumny, jeśli nie istnieje (bezpieczny sposób)
+    try:
+        cursor.execute("ALTER TABLE economy ADD COLUMN last_vote INTEGER DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass # Kolumna już istnieje, idziemy dalej
 
     # 3. Poziomy (Leveling) - TO JEST DLA CIEBIE KLUCZOWE
     cursor.execute("""
@@ -2218,7 +2225,7 @@ async def topxp(interaction: discord.Interaction):
         await interaction.followup.send(f"❌ An error occurred while generating the leaderboard: `{e}`", ephemeral=True)
 
 
-def process_coinflip_gamble(user_id: int, bet_amount: int) -> tuple[str, dict]:
+def process_coinflip_gamble(user_id: int, bet_amount: int, user_choice: str) -> tuple[str, dict]:
     """Przetwarza rzut monetą wewnątrz bezpiecznej transakcji."""
     base_dir = os.path.dirname(os.path.abspath(__file__))
     db_path = os.path.join(base_dir, "volt.db")
@@ -2238,7 +2245,8 @@ def process_coinflip_gamble(user_id: int, bet_amount: int) -> tuple[str, dict]:
             return "insufficient_funds", {"balance": current_balance}
             
         outcome = random.choice(["Heads", "Tails"])
-        is_winner = random.choice([True, False])
+        # Porównanie wyboru użytkownika z wynikiem
+        is_winner = (user_choice.capitalize() == outcome)
         
         if is_winner:
             new_balance = current_balance + bet_amount
@@ -2250,7 +2258,7 @@ def process_coinflip_gamble(user_id: int, bet_amount: int) -> tuple[str, dict]:
             status = "lose"
             
         conn.commit()
-        return status, {"outcome": outcome, "new_balance": new_balance}
+        return status, {"outcome": outcome, "choice": user_choice, "new_balance": new_balance}
         
     except Exception as e:
         conn.rollback()
@@ -2259,57 +2267,148 @@ def process_coinflip_gamble(user_id: int, bet_amount: int) -> tuple[str, dict]:
     finally:
         conn.close()
 
-@bot.tree.command(name="coinflip", description="Flip a coin and gamble your Volt Coins with a 50/50 chance")
+@bot.tree.command(name="coinflip", description="Flip a coin and gamble your Volt Coins")
+@app_commands.describe(amount="Amount of coins to bet", choice="Heads or Tails?")
+@app_commands.choices(choice=[
+    app_commands.Choice(name="Heads", value="Heads"),
+    app_commands.Choice(name="Tails", value="Tails")
+])
 @premium_only()
-@app_commands.describe(amount="The amount of coins you want to wager")
-async def coinflip(interaction: discord.Interaction, amount: int):
+async def coinflip(interaction: discord.Interaction, amount: int, choice: str):
     if amount <= 0:
         await interaction.response.send_message("❌ Your wager must be greater than 0 coins.", ephemeral=True)
         return
 
     await interaction.response.defer(ephemeral=False)
+    
+    # Efekt "rzutu" - czekanie
+    msg = await interaction.followup.send("🪙 Flipping the coin...", wait=True)
+    await asyncio.sleep(1.5)
+    
     user_id = interaction.user.id
-
-    status, data = await asyncio.to_thread(process_coinflip_gamble, user_id, amount)
+    status, data = await asyncio.to_thread(process_coinflip_gamble, user_id, amount, choice)
 
     if status == "insufficient_funds":
         embed_poor = discord.Embed(
             title="❌ Bet Rejected",
-            description=f"You do not have enough coins to place this wager.\nYour balance: **{data['balance']:,}** coins.",
+            description=f"You do not have enough coins. Your balance: **{data['balance']:,}**.",
             color=discord.Color.red()
         )
-        await interaction.followup.send(embed=embed_poor, ephemeral=True)
+        await msg.edit(content=None, embed=embed_poor)
         return
         
-    elif status == "error":
-        await interaction.followup.send(f"❌ Casino engine error: `{data['error_msg']}`", ephemeral=True)
-        return
-
     coin_side = data["outcome"]
     new_balance = data["new_balance"]
 
     if status == "win":
         embed_win = discord.Embed(
             title="🟩 YOU WON!",
-            description=f"The coin spun through the air and landed on **{coin_side.upper()}**!",
+            description=f"You chose **{data['choice']}** and it landed on **{coin_side.upper()}**!",
             color=discord.Color.green()
         )
-        embed_win.add_field(name="💰 Earnings", value=f"**+{amount:,}** Volt Coins", inline=True)
-        embed_win.add_field(name="💳 New Balance", value=f"**{new_balance:,}** coins", inline=True)
-        embed_win.set_footer(text="VoltBot Entertainment Hub • Fortune favors the bold")
-        await interaction.followup.send(embed=embed_win)
+        embed_win.add_field(name="💰 Winnings", value=f"**+{amount:,}**", inline=True)
+        embed_win.add_field(name="💳 New Balance", value=f"**{new_balance:,}**", inline=True)
+        await msg.edit(content=None, embed=embed_win)
         
     else:
         embed_lose = discord.Embed(
             title="🟥 YOU LOST",
-            description=f"The coin spun through the air and landed on **{coin_side.upper()}**...",
+            description=f"You chose **{data['choice']}** but it landed on **{coin_side.upper()}**...",
             color=discord.Color.red()
         )
-        embed_lose.add_field(name="📉 Loss", value=f"**-{amount:,}** Volt Coins", inline=True)
-        embed_lose.add_field(name="💳 New Balance", value=f"**{new_balance:,}** coins", inline=True)
-        embed_lose.set_footer(text="VoltBot Entertainment Hub • House always wins")
-        await interaction.followup.send(embed=embed_lose)
+        embed_lose.add_field(name="📉 Loss", value=f"**-{amount:,}**", inline=True)
+        embed_lose.add_field(name="💳 New Balance", value=f"**{new_balance:,}**", inline=True)
+        await msg.edit(content=None, embed=embed_lose)
 
+def process_dice_gamble(user_id: int, bet_amount: int, is_winner: bool) -> tuple[str, dict]:
+    conn = sqlite3.connect("volt.db", timeout=10)
+    cursor = conn.cursor()
+    try:
+        cursor.execute("BEGIN TRANSACTION;")
+        cursor.execute("SELECT balance FROM economy WHERE user_id = ?", (user_id,))
+        current_balance = cursor.fetchone()[0]
+        
+        if current_balance < bet_amount:
+            conn.rollback()
+            return "insufficient_funds", {"balance": current_balance}
+            
+        # Dice: wygrana to 4x zysk (total 5x stawki)
+        change = (bet_amount * 4) if is_winner else -bet_amount
+        cursor.execute("UPDATE economy SET balance = balance + ? WHERE user_id = ?", (change, user_id))
+        
+        conn.commit()
+        return "success", {"new_balance": current_balance + change}
+    except Exception as e:
+        conn.rollback()
+        return "error", {"error_msg": str(e)}
+    finally:
+        conn.close()
+
+@bot.tree.command(name="dice", description="Roll a dice and bet!")
+@premium_only()
+async def dice(interaction: discord.Interaction, amount: int, prediction: int):
+    if not 1 <= prediction <= 6:
+        await interaction.response.send_message("❌ Please choose a number between 1 and 6.", ephemeral=True)
+        return
+    
+    await interaction.response.defer()
+    result = random.randint(1, 6)
+    is_winner = (result == prediction)
+    
+    status, data = await asyncio.to_thread(process_dice_gamble, interaction.user.id, amount, is_winner)
+    
+    if status == "success":
+        title = "🟩 YOU WON!" if is_winner else "🟥 YOU LOST"
+        description = (f"You predicted **{prediction}**, the dice rolled **{result}**.\n\n"
+                       f"💳 New balance: **{data['new_balance']:,}** coins.")
+        
+        embed = discord.Embed(title=title, description=description, 
+                              color=discord.Color.green() if is_winner else discord.Color.red())
+        await interaction.followup.send(embed=embed)
+    else:
+        await interaction.followup.send("❌ Casino engine error or insufficient funds.", ephemeral=True)
+
+def process_slots_gamble(user_id: int, bet_amount: int, multiplier: int) -> tuple[str, dict]:
+    conn = sqlite3.connect("volt.db", timeout=10)
+    cursor = conn.cursor()
+    try:
+        cursor.execute("BEGIN TRANSACTION;")
+        cursor.execute("SELECT balance FROM economy WHERE user_id = ?", (user_id,))
+        current_balance = cursor.fetchone()[0]
+        
+        if current_balance < bet_amount:
+            conn.rollback()
+            return "insufficient_funds", {"balance": current_balance}
+            
+        # Jeśli multiplier > 0 to wygrana, jeśli -1 to przegrana
+        change = (bet_amount * multiplier) if multiplier > 0 else -bet_amount
+        cursor.execute("UPDATE economy SET balance = balance + ? WHERE user_id = ?", (change, user_id))
+        
+        conn.commit()
+        return "success", {"new_balance": current_balance + change}
+    finally:
+        conn.close()
+
+@bot.tree.command(name="slots", description="Pull the lever on the Volt Slot Machine!")
+@premium_only()
+async def slots(interaction: discord.Interaction, amount: int):
+    await interaction.response.defer()
+    symbols = ["🍒", "💎", "🍋", "🔔", "⭐"]
+    r1, r2, r3 = random.choices(symbols, k=3)
+    
+    if r1 == r2 == r3: mult = 10; result_text = "JACKPOT!"
+    elif r1 == r2 or r2 == r3 or r1 == r3: mult = 2; result_text = "YOU WON!"
+    else: mult = -1; result_text = "YOU LOST"
+    
+    status, data = await asyncio.to_thread(process_slots_gamble, interaction.user.id, amount, mult)
+    
+    if status == "success":
+        embed = discord.Embed(title=f"🎰 {result_text}", 
+                              description=f"| {r1} | {r2} | {r3} |\n\n💳 New balance: **{data['new_balance']:,}** coins.",
+                              color=discord.Color.gold() if mult > 0 else discord.Color.red())
+        await interaction.followup.send(embed=embed)
+    else:
+        await interaction.followup.send("❌ Insufficient funds to play.", ephemeral=True)
 
 def get_top_economy_data(limit: int = 10) -> list[tuple[str, int]]:
     """Bezpiecznie pobiera TOP 10 najbogatszych graczy z bazy danych w tle."""
@@ -2588,6 +2687,15 @@ for cmd in bot.tree.get_commands():
     print(f"[DEBUG] Znaleziono komendę: {cmd.name}")
 
 # --- KOMENDA /VOTE ---
+def add_money(user_id, amount):
+    conn = sqlite3.connect("volt.db")
+    cursor = conn.cursor()
+    # Upewniamy się, że użytkownik istnieje, potem dodajemy monety
+    cursor.execute("INSERT OR IGNORE INTO economy (user_id, balance) VALUES (?, 0)", (user_id,))
+    cursor.execute("UPDATE economy SET balance = balance + ? WHERE user_id = ?", (amount, user_id))
+    conn.commit()
+    conn.close()
+
 @bot.tree.command(
     name="vote",
     description="Vote for VoltBot on Top.gg and claim your 500 coins reward!",
@@ -2595,54 +2703,46 @@ for cmd in bot.tree.get_commands():
 async def vote(interaction: discord.Interaction):
     user_id = interaction.user.id
     now = datetime.datetime.utcnow()
-    cooldown_time = datetime.timedelta(hours=12)
-
-    if user_id in user_last_vote:
-        last_vote_time = user_last_vote[user_id]
-        if now - last_vote_time < cooldown_time:
-            time_left = cooldown_time - (now - last_vote_time)
+    
+    # 1. Sprawdzenie cooldownu w bazie (zamiast w pamięci RAM, żeby nie znikało po restarcie!)
+    conn = sqlite3.connect("volt.db")
+    cursor = conn.cursor()
+    cursor.execute("SELECT last_vote FROM economy WHERE user_id = ?", (user_id,))
+    row = cursor.fetchone()
+    
+    # Konwersja czasu z bazy (jeśli istnieje)
+    if row and row[0] != 0:
+        last_vote = datetime.datetime.fromtimestamp(row[0])
+        if now - last_vote < datetime.timedelta(hours=12):
+            time_left = datetime.timedelta(hours=12) - (now - last_vote)
             hours, remainder = divmod(int(time_left.total_seconds()), 3600)
             minutes, _ = divmod(remainder, 60)
-
-            embed_cooldown = discord.Embed(
-                title="⏳ Vote Cooldown",
-                description=f"You have already claimed your voting reward! You can vote again in **{hours}h {minutes}m**.",
-                color=discord.Color.orange(),
-            )
+            
             await interaction.response.send_message(
-                embed=embed_cooldown, ephemeral=True
+                f"⏳ You have already claimed your voting reward! You can vote again in **{hours}h {minutes}m**.",
+                ephemeral=True
             )
+            conn.close()
             return
+    conn.close()
 
+    # 2. Jeśli cooldown minął - dodajemy monety i aktualizujemy czas w bazie
+    add_money(user_id, 500)
+    
+    conn = sqlite3.connect("volt.db")
+    cursor = conn.cursor()
+    cursor.execute("UPDATE economy SET last_vote = ? WHERE user_id = ?", (int(now.timestamp()), user_id))
+    conn.commit()
+    conn.close()
+
+    # 3. Wysyłka Embedu
     topgg_url = f"https://top.gg/bot/{bot.user.id}/vote"
-
     view = discord.ui.View()
-    button = discord.ui.Button(
-        label="Click Here to Vote!",
-        url=topgg_url,
-        style=discord.ButtonStyle.link,
-        emoji="🚀",
-    )
-    view.add_item(button)
+    view.add_item(discord.ui.Button(label="Click Here to Vote!", url=topgg_url, style=discord.ButtonStyle.link, emoji="🚀"))
 
-    reward_amount = 500
-    # TUTAJ DOPISZ SWOJĄ FUNKCJĘ DODAJĄCĄ MONETY DO BAZY DANYCH, np:
-    # await add_money(user_id, reward_amount)
-
-    # 5. Zapisanie aktualnego czasu głosowania
-    user_last_vote[user_id] = now
-
-    # 6. Wysłanie eleganckiego Embedu z przyciskiem do kliknięcia
     embed_vote = discord.Embed(
         title="⚡ Support VoltBot!",
-        description=(
-            f"Thank you for supporting **VoltBot**!\n\n"
-            f"💰 **+{reward_amount} coins** have been added to your balance.\n"
-            f"Please make sure to actually click the button below and submit your vote on Top.gg!"
-        ),
+        description="Thank you for supporting **VoltBot**! 💰 **+500 coins** have been added to your balance.",
         color=discord.Color.purple(),
     )
-    embed_vote.set_thumbnail(url=interaction.user.display_avatar.url)
-    embed_vote.set_footer(text="You can claim this reward every 12 hours.")
-
     await interaction.response.send_message(embed=embed_vote, view=view)
