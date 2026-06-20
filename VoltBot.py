@@ -246,35 +246,26 @@ def init_subs_db():
 # Wywołaj tę funkcję przy starcie bota:
 init_subs_db()
 
-def check_premium_db(guild_id: int) -> bool:
-    """Sprawdza bezpiecznie w bazie danych, czy serwer ma aktywną i niewygasłą licencję Premium."""
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    db_path = os.path.join(base_dir, "volt.db")
+cursor.execute("""
+    UPDATE licenses 
+    SET is_used = 1, used_by_user_id = ?, expires_at = ? 
+    WHERE license_key = ?
+""", (str(user_id), expiry_timestamp, clean_key))
 
-    conn = sqlite3.connect(db_path)
+def check_premium_db(guild_id: int) -> bool:
+    conn = sqlite3.connect("volt.db")
     cursor = conn.cursor()
     current_time = int(time.time())
-
-    try:
-        # Pobieramy czas wygaśnięcia dla serwera z poprawnej kolumny used_by_user_id
-        cursor.execute(
-            "SELECT expires_at FROM licenses WHERE used_by_user_id = ? AND is_used = 1",
-            (str(guild_id),),
-        )
-        row = cursor.fetchone()
-
-        # Jeśli licencja istnieje i jej czas wygaśnięcia jest większy niż obecny czas
-        if row and row[0] is not None:
-            if int(row[0]) > current_time:
-                return True
-                
-    except Exception as e:
-        print(f"❌ [DB ERROR] check_premium_db error: {e}")
-        
-    finally:
-        # Blok finally wykona się ZAWSZE, gwarantując bezpieczne zamknięcie bazy
-        conn.close()
-
+    
+    # Szukamy serwera w tabeli 'licenses'
+    # Pamiętaj: w 'licenses' masz kolumnę 'used_by_user_id' jako TEXT
+    cursor.execute("SELECT expires_at FROM licenses WHERE used_by_user_id = ? AND is_used = 1", (str(guild_id),))
+    row = cursor.fetchone()
+    conn.close()
+    
+    if row and row[0] is not None:
+        if int(row[0]) > current_time:
+            return True
     return False
     
 def redeem_key_logic(user_id, input_key):
@@ -322,34 +313,7 @@ def redeem_key_logic(user_id, input_key):
     return {"status": "success", "days": days_to_add}
 
 def is_premium(guild_id: int) -> bool:
-    try:
-        base_dir = os.path.dirname(os.path.abspath(__file__))
-        db_path = os.path.join(base_dir, "volt.db")
-        conn = sqlite3.connect(db_path)
-        cursor = conn.cursor()
-        
-        # DODAJ TĘ LINIĘ: wypiszemy w konsoli, co szukamy
-        print(f"DEBUG: Checking premium for guild_id: {guild_id}")
-        
-        cursor.execute("""
-            SELECT expires_at FROM licenses 
-            WHERE used_by_user_id = ? AND is_used = 1
-        """, (str(guild_id),))
-        
-        row = cursor.fetchone()
-        
-        # DODAJ TĘ LINIĘ: wypiszemy wynik z bazy
-        print(f"DEBUG: Found row: {row}")
-        
-        conn.close()
-        
-        if row and row[0] is not None:
-            if int(row[0]) > int(time.time()):
-                return True
-    except Exception as e:
-        print(f"❌ [DB ERROR] {e}")
-        
-    return False
+    return check_premium_db(guild_id)
     
 app = FastAPI()
 
@@ -2616,18 +2580,15 @@ async def license_generate(interaction: discord.Interaction, days: int):
 @bot.tree.command(name="license_redeem", description="Activate your subscription key for this server")
 @app_commands.describe(key="Your license key (VOLT-XXXX-XXXX-XXXX)")
 async def license_redeem(interaction: discord.Interaction, key: str):
-    # Deferujemy odpowiedź, żeby bot miał czas na operacje na bazie i nie dostał timeoutu
     await interaction.response.defer(ephemeral=True)
 
-    # Bezpieczeństwo: Sprawdzamy czy komenda nie jest wpisana w wiadomości prywatnej (DM)
     if not interaction.guild_id:
         await interaction.followup.send("❌ You can only redeem keys inside a server.", ephemeral=True)
         return
 
-    guild_id = str(interaction.guild_id) # Zapisujemy ID tego serwera jako tekst
     clean_key = key.strip()
+    guild_id_str = str(interaction.guild_id)
 
-    # Absolutna ścieżka do bazy danych volt.db
     base_dir = os.path.dirname(os.path.abspath(__file__))
     db_path = os.path.join(base_dir, "volt.db")
 
@@ -2635,7 +2596,7 @@ async def license_redeem(interaction: discord.Interaction, key: str):
     cursor = conn.cursor()
 
     try:
-        # 1. Sprawdzamy czy klucz w ogóle istnieje w bazie danych
+        # 1. Sprawdzamy czy klucz istnieje i nie jest użyty
         cursor.execute(
             "SELECT id, duration_days, is_used FROM licenses WHERE license_key = ?",
             (clean_key,),
@@ -2648,59 +2609,37 @@ async def license_redeem(interaction: discord.Interaction, key: str):
 
         db_id, duration_days, is_used = row
 
-        # 2. Sprawdzamy czy klucz nie został już wcześniej przez kogoś zużyty
         if is_used == 1:
             await interaction.followup.send("❌ This license key has already been used.", ephemeral=True)
             return
 
-        # 3. Obliczamy dokładny timestamp wygaśnięcia licencji
-        seconds_to_add = int(duration_days) * 24 * 60 * 60
-        expiry_timestamp = int(time.time()) + seconds_to_add
+        # 2. Obliczamy czas wygaśnięcia
+        expiry_timestamp = int(time.time()) + (int(duration_days) * 24 * 60 * 60)
 
-        # 4. Zapisujemy aktywację – przypisujemy ID serwera do Twojej kolumny used_by_user_id
-        cursor.execute(
-            """
+        # 3. Zapisujemy aktywację (UPDATE)
+        cursor.execute("""
             UPDATE licenses 
             SET is_used = 1, used_by_user_id = ?, expires_at = ? 
             WHERE id = ?
-        """,
-            (guild_id, expiry_timestamp, db_id),
-        )
+        """, (guild_id_str, expiry_timestamp, db_id))
 
-        # Zatwierdzamy zmiany w bazie danych
         conn.commit()
         
-        # 5. Tworzymy piękny, profesjonalny panel sukcesu dla użytkownika Premium
+        print(f"DEBUG: Aktywowano klucz {clean_key} dla serwera {guild_id_str}. Zmieniono wierszy: {cursor.rowcount}")
+
+        # 4. Sukces
         embed_success = discord.Embed(
             title="👑 Volt Premium Activated Successfully!",
-            description=(
-                f"Thank you for your support! Automated systems have successfully "
-                f"unlocked all premium features for **{interaction.guild.name}**."
-            ),
-            color=0x00fff0 # Twój flagowy neonowy błękit
+            description=f"Premium features are now unlocked for **{interaction.guild.name}**.",
+            color=0x00fff0
         )
         embed_success.add_field(name="📅 Subscription Plan", value=f"`{duration_days} Days`", inline=True)
-        embed_success.add_field(name="🔒 Server Protection", value="Enhanced 🟢", inline=True)
-        embed_success.add_field(
-            name="🚀 What next?", 
-            value="All features (including `/ticket`) are now fully unlocked for everyone on this server!", 
-            inline=False
-        )
-        embed_success.set_footer(
-            text=f"VoltBot Premium • Setup Completed", 
-            icon_url=interaction.guild.icon.url if interaction.guild.icon else None
-        )
-        
-        # Wysyłamy ukrytą wiadomość z potwierdzeniem
         await interaction.followup.send(embed=embed_success, ephemeral=True)
 
     except Exception as e:
-        # W razie jakiegokolwiek błędu, logujemy go w konsoli i informujemy admina
-        print(f"❌ [LICENSE ERROR] Something went wrong: {e}")
-        await interaction.followup.send(f"❌ Database error during activation: `{e}`", ephemeral=True)
-
+        print(f"❌ [LICENSE ERROR] {e}")
+        await interaction.followup.send(f"❌ Database error: `{e}`", ephemeral=True)
     finally:
-        # Zawsze zamykamy połączenie, żeby nie zablokować pliku bazy .db
         conn.close()
         
 @bot.tree.command(name="license_check", description="Check the Premium subscription status for this server")
