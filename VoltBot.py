@@ -321,15 +321,37 @@ def redeem_key_logic(user_id, input_key):
     
     return {"status": "success", "days": days_to_add}
 
-def is_premium(user_id: int) -> bool:
-    # Zamieniamy ID na string, bo tak zapisujemy w bazie
-    uid_str = str(user_id)
-    expiration = database.check_user_license(uid_str)
-    
-    if expiration:
-        return True
+def is_premium(guild_id: int) -> bool:
+    """
+    Checks the premium status by querying the 'licenses' table directly.
+    """
+    try:
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        db_path = os.path.join(base_dir, "volt.db")
+        
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        
+        # We query your existing 'licenses' table
+        # We filter by the guild_id (stored in used_by_user_id) and check expiration
+        cursor.execute("""
+            SELECT expires_at FROM licenses 
+            WHERE used_by_user_id = ? AND is_used = 1
+        """, (str(guild_id),))
+        
+        row = cursor.fetchone()
+        conn.close()
+        
+        if row and row[0] is not None:
+            expiry_timestamp = int(row[0])
+            # Check if it's still valid
+            if expiry_timestamp > int(time.time()):
+                return True
+                
+    except Exception as e:
+        print(f"❌ [DB ERROR] License check failed: {e}")
+        
     return False
-
 app = FastAPI()
 
 def premium_only():
