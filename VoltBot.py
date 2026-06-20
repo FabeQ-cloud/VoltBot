@@ -2540,25 +2540,25 @@ async def leaderboard(interaction: discord.Interaction):
 
 YOUR_DISCORD_ID = 1490030330084720892
 
-@bot.tree.command(name="license_generate", description="Generate a new Premium license key (Admin Only)")
+@bot.tree.command(name="license_generate", description="Generate a new Premium license key (Owner Only)")
 @app_commands.describe(days="How many days of Premium this key should grant")
 async def license_generate(interaction: discord.Interaction, days: int):
-    # 1. Zabezpieczenie: tylko Administrator serwera może generować klucze
-    if not interaction.user.guild_permissions.administrator:
-        await interaction.response.send_message("❌ Only server administrators can generate keys.", ephemeral=True)
+    # ZABEZPIECZENIE: Tylko Ty możesz użyć tej komendy
+    if interaction.user.id != YOUR_DISCORD_ID:
+        # Wysyłamy wiadomość, że to komenda tylko dla właściciela
+        await interaction.response.send_message("❌ This command is restricted to the bot owner.", ephemeral=True)
         return
 
-    # Deferujemy odpowiedź, żeby bot spokojnie zapisał dane w bazie
+    # Deferujemy odpowiedź
     await interaction.response.defer(ephemeral=True)
 
-    # 2. Generujemy unikalny klucz w formacie: VOLT-XXXX-XXXX-XXXX
-    # secrets.token_hex(4) daje nam 8 losowych znaków (np. a1b2c3d4)
+    # Generowanie klucza
     key_part1 = secrets.token_hex(4).upper()
     key_part2 = secrets.token_hex(4).upper()
     key_part3 = secrets.token_hex(4).upper()
     generated_key = f"VOLT-{key_part1}-{key_part2}-{key_part3}"
 
-    # 3. Zapisujemy wygenerowany klucz bezpośrednio do bazy volt.db
+    # Zapis do bazy
     base_dir = os.path.dirname(os.path.abspath(__file__))
     db_path = os.path.join(base_dir, "volt.db")
 
@@ -2566,18 +2566,17 @@ async def license_generate(interaction: discord.Interaction, days: int):
     cursor = conn.cursor()
 
     try:
-        # Wrzucamy czysty klucz: is_used jest domyślnie 0, reszta kolumn pusta, dopóki ktoś go nie użyje
         cursor.execute(
             "INSERT INTO licenses (license_key, duration_days) VALUES (?, ?)",
             (generated_key, days)
         )
         conn.commit()
 
-        # 4. Tworzymy ładną odpowiedź dla Ciebie w konsoli/Discordzie
+        # Embed odpowiedzi
         embed_key = discord.Embed(
             title="🔑 New License Key Generated",
-            description="Keep this key secure. You can give it to a server owner to activate Premium.",
-            color=0x00fff0 # Neonowy błękit VoltBota
+            description="Premium license created successfully.",
+            color=0x00fff0
         )
         embed_key.add_field(name="🎫 License Key", value=f"`{generated_key}`", inline=False)
         embed_key.add_field(name="⏳ Duration", value=f"`{days} Days`", inline=True)
@@ -2586,12 +2585,8 @@ async def license_generate(interaction: discord.Interaction, days: int):
 
         await interaction.followup.send(embed=embed_key, ephemeral=True)
 
-    except sqlite3.IntegrityError:
-        # Bardzo mała szansa, ale jeśli klucz by się powtórzył w bazie:
-        await interaction.followup.send("⚠️ Key collision detected. Please try running the command again.", ephemeral=True)
     except Exception as e:
-        print(f"❌ [GENERATE ERROR] {e}")
-        await interaction.followup.send(f"❌ Database error while generating key: `{e}`", ephemeral=True)
+        await interaction.followup.send(f"❌ Database error: `{e}`", ephemeral=True)
     finally:
         conn.close()
         
@@ -2765,117 +2760,6 @@ print(f"[DEBUG] Sprawdzanie komend przed startem:")
 print(f"[DEBUG] Liczba komend w tree: {len(bot.tree.get_commands())}")
 for cmd in bot.tree.get_commands():
     print(f"[DEBUG] Znaleziono komendę: {cmd.name}")
-
-@bot.tree.command(
-    name="debug_premium",
-    description="DEVELOPER ONLY: Find out exactly why premium is not working",
-)
-async def debug_premium(interaction: discord.Interaction):
-    await interaction.response.defer(ephemeral=True)
-
-    user_id = interaction.user.id
-    current_time = int(time.time())
-
-    # 1. Szukamy wszystkich plików .db w folderze projektu, żeby sprawdzić czy nie ma duplikatów
-    db_files = []
-    for root, dirs, files in os.walk("."):
-        for file in files:
-            if file.endswith(".db"):
-                full_path = os.path.join(root, file)
-                db_files.append(full_path)
-
-    report = f"**Znalezione pliki baz danych na dysku:** {db_files}\n\n"
-
-    # 2. Przeszukujemy każdy znaleziony plik w poszukiwaniu Twojego ID
-    report += f"**Szukam ID użytkownika:** `{user_id}` (jako liczba i jako tekst)\n\n"
-
-    for db_path in db_files:
-        report += f"**Analizuję plik:** `{db_path}`\n"
-        try:
-            conn = sqlite3.connect(db_path)
-            cursor = conn.cursor()
-
-            # Pobieramy listy tabel w tym konkretnym pliku
-            cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
-            tables = [row[0] for row in cursor.fetchall()]
-            report += f"  ↳ Tabele w tym pliku: {tables}\n"
-
-            for table in tables:
-                # Sprawdzamy strukturę tabeli
-                cursor.execute(f"PRAGMA table_info({table})")
-                columns = [col[1] for col in cursor.fetchall()]
-
-                if "user_id" in columns:
-                    # Szukamy wpisu dla Twojego ID
-                    cursor.execute(
-                        f"SELECT * FROM {table} WHERE user_id = ? OR user_id = ?",
-                        (int(user_id), str(user_id)),
-                    )
-                    row = cursor.fetchone()
-
-                    if row:
-                        report += f"  **Znalazłem wpis w tabeli `{table}`!**\n"
-                        report += f"  ↳ Dane w bazie: `{row}`\n"
-                        # Szukamy kolumny z czasem wygaśnięcia (zazwyczaj druga kolumna)
-                        try:
-                            expiry = int(row[1])
-                            report += f"  ↳ Czas wygaśnięcia (Unix): `{expiry}`\n"
-                            if expiry > current_time:
-                                report += "  ↳ STATUS: Ważne (Powinno działać!)\n"
-                            else:
-                                report += f"  ↳ STATUS: Wygasło (Różnica: {current_time - expiry} sekund temu)\n"
-                        except:
-                            report += "  ↳ STATUS: Nie mogłem odczytać czasu wygaśnięcia.\n"
-                    else:
-                        report += f"  🔸 Brak wpisu dla Twojego ID w tabeli `{table}`.\n"
-
-            conn.close()
-        except Exception as e:
-            report += f"  Błąd odczytu pliku: {str(e)}\n"
-        report += "\n"
-
-    report += f"**Aktualny czas bota (Unix):** `{current_time}`"
-
-    # Jeśli raport jest za długi, dzielimy go na części
-    if len(report) > 2000:
-        report = report[:1950] + "\n... (obcięto zbyt długi raport)"
-
-    await interaction.followup.send(report, ephemeral=True)
-
-@bot.tree.command(name="dump_licenses", description="DEVELOPER ONLY: See raw data inside licenses table")
-async def dump_licenses(interaction: discord.Interaction):
-    await interaction.response.defer(ephemeral=True)
-    
-    conn = sqlite3.connect("volt.db")
-    cursor = conn.cursor()
-    
-    try:
-        # Pobieramy nazwy kolumn w tabeli licenses
-        cursor.execute("PRAGMA table_info(licenses)")
-        columns = [f"{col[1]} ({col[2]})" for col in cursor.fetchall()]
-        col_text = ", ".join(columns)
-        
-        # Pobieramy 5 ostatnich rekordów
-        cursor.execute("SELECT * FROM licenses LIMIT 5")
-        rows = cursor.fetchall()
-        
-        report = f"📋 **Struktura tabeli `licenses` (Kolumny):**\n`[{col_text}]`\n\n"
-        report += "📊 **Ostatnie wpisy w tej tabeli:**\n"
-        
-        if rows:
-            for row in rows:
-                report += f"🔹 `{row}`\n"
-        else:
-            report += "🔸 Tabela `licenses` jest całkowicie pusta!\n"
-            
-    except Exception as e:
-        report = f"Błąd podczas sprawdzania tabeli `licenses`: {str(e)}"
-        
-    conn.close()
-    await interaction.followup.send(report, ephemeral=True)
-
-user_last_vote = {}
-
 
 # --- KOMENDA /VOTE ---
 @bot.tree.command(
