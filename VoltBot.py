@@ -305,82 +305,40 @@ user_recent_messages = collections.defaultdict(list)
 
 @bot.event
 async def on_message(message):
+    # 1. Ignoruj boty i wiadomości prywatne
     if message.author.bot or not message.guild:
         return
 
+    # 2. Admini mogą pisać bez limitów
     if message.author.guild_permissions.administrator:
-        await bot.process_commands(message)
         return
 
+    # 3. Logika Antyspamu (tylko tekst!)
     user_id = message.author.id
     current_time = time.time()
 
     user_message_times[user_id].append(current_time)
-    user_message_times[user_id] = [
-        t for t in user_message_times[user_id] if current_time - t < 5
-    ]
-
+    user_message_times[user_id] = [t for t in user_message_times[user_id] if current_time - t < 5]
+    
     user_recent_messages[user_id].append(message)
     user_recent_messages[user_id] = user_recent_messages[user_id][-20:]
 
     if len(user_message_times[user_id]) >= 6:
-
-        last_spam_content = message.content if message.content else "[Brak tekstu / Obrazek]"
-        spam_channel = message.channel
         spam_author = message.author
-
+        
+        # Usuń wiadomości z historii
         for msg in user_recent_messages[user_id]:
             try:
                 await msg.delete()
-            except (discord.NotFound, discord.Forbidden):
+            except:
                 pass
 
         user_message_times[user_id].clear()
         user_recent_messages[user_id].clear()
 
-        warning = await spam_channel.send(
-            f"{spam_author.mention} Stop spamming!"
-        )
-
-        log_channel = discord.utils.get(
-            spam_author.guild.text_channels, name="voltbot-logs"
-        )
-        if not log_channel:
-            log_channel = discord.utils.get(
-                spam_author.guild.text_channels, name="mod-logs"
-            )
-
-        if log_channel:
-            embed = discord.Embed(
-                title="Anti-Spam Triggered",
-                description=f"VoltBot successfully intercepted spam from {spam_author.mention}.",
-                color=discord.Color.red(),
-                timestamp=discord.utils.utcnow(),  # Automatyczna data i godzina logu
-            )
-            embed.set_thumbnail(url=spam_author.display_avatar.url)
-            embed.add_field(name="User", value=f"{spam_author} (ID: {spam_author.id})", inline=True)
-            embed.add_field(name="Channel", value=spam_channel.mention, inline=True)
-            embed.add_field(
-                name="Last Message Caught",
-                value=f"```\n{last_spam_content}\n```",
-                inline=False,
-            )
-            embed.set_footer(text="VoltBot Security Systems")
-
-            try:
-                await log_channel.send(embed=embed)
-            except discord.Forbidden:
-                print(f"Brak uprawnień do wysłania logów na kanale {log_channel.name}")
-
-        await asyncio.sleep(3)
-        try:
-            await warning.delete()
-        except discord.NotFound:
-            pass
-
+        # Ostrzeżenie (opcjonalne)
+        await message.channel.send(f"⚠️ {spam_author.mention} Stop spamming!", delete_after=5)
         return
-
-    await bot.process_commands(message)
 
 def fix_economy_table():
     import os
