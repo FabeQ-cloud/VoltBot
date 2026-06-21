@@ -486,7 +486,6 @@ class TicketView(discord.ui.View):
 
     @discord.ui.button(label="Open Ticket", style=discord.ButtonStyle.green)
     async def open_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
-
         guild = interaction.guild
         user = interaction.user
 
@@ -502,10 +501,25 @@ class TicketView(discord.ui.View):
         await channel.set_permissions(guild.default_role, view_channel=False)
         await channel.set_permissions(user, view_channel=True, send_messages=True)
 
-        await channel.send(f"Ticket created by {user.mention}")
+        # --- TWÓJ NOWY AUTOMATYCZNY EMBED ---
+        welcome_embed = discord.Embed(
+            title="🎫 Ticket Opened",
+            description=f"Welcome {user.mention}, the support team will be with you shortly.",
+            color=0x00ffcc # Twój flagowy kolor
+        )
+        welcome_embed.add_field(
+            name="Instructions", 
+            value="Please describe your issue in detail. If you have screenshots, upload them now.", 
+            inline=False
+        )
+        welcome_embed.set_footer(text="VoltBot Premium Support System")
+        
+        # Wysyłamy embed do nowo utworzonego kanału
+        await channel.send(embed=welcome_embed)
+        # ------------------------------------
 
         await interaction.response.send_message(
-            f"Ticket created: {channel.mention}",
+            f"✅ Ticket created: {channel.mention}",
             ephemeral=True
         )
 
