@@ -37,12 +37,13 @@ class VoltBot(discord.Client):
         intents.message_content = True
         super().__init__(intents=intents)
         self.tree = app_commands.CommandTree(self)
-
-    async def setup_hook(self):
-        # 1. Tu wywołujemy inicjalizację bazy – to zadziała na 100%
-        init_db() 
         
-        # 2. Synchronizacja komend
+        # Prawidłowe zainicjalizowanie słowników wewnątrz __init__
+        self.user_message_times = defaultdict(list)
+        self.user_recent_messages = defaultdict(list)
+    
+    async def setup_hook(self):
+        init_db() 
         synced = await self.tree.sync()
         print(f"[✅] Zsynchronizowano {len(synced)} komend!")
         print(f"[✅] Baza danych zainicjalizowana.")
@@ -50,6 +51,42 @@ class VoltBot(discord.Client):
     async def on_ready(self):
         print(f"[🚀] Zalogowano jako {self.user}!")
         print(f"[🔍] Bot widzi {len(self.tree.get_commands())} komend.")
+
+    async def on_message(self, message):
+        # 1. Ignoruj boty i wiadomości prywatne
+        if message.author.bot or not message.guild:
+            return
+
+        # 2. Admini mogą pisać bez limitów
+        if message.author.guild_permissions.administrator:
+            return
+
+        # 3. Logika Antyspamu
+        user_id = message.author.id
+        current_time = time.time()
+
+        self.user_message_times[user_id].append(current_time)
+        self.user_message_times[user_id] = [t for t in self.user_message_times[user_id] if current_time - t < 5]
+        
+        self.user_recent_messages[user_id].append(message)
+        self.user_recent_messages[user_id] = self.user_recent_messages[user_id][-20:]
+
+        if len(self.user_message_times[user_id]) >= 6:
+            spam_author = message.author
+            
+            for msg in self.user_recent_messages[user_id]:
+                try:
+                    await msg.delete()
+                except:
+                    pass
+
+            self.user_message_times[user_id].clear()
+            self.user_recent_messages[user_id].clear()
+
+            await message.channel.send(f"⚠️ {spam_author.mention} Stop spamming!", delete_after=5)
+            
+        # 2. DEBUG - zobacz czy w ogóle to czyta
+        print(f"[DEBUG] Wiadomość od {message.author}: {message.content}")
 
 bot = VoltBot()
 
@@ -298,48 +335,6 @@ def is_licensed(guild_id: int):
 
     return time.time() < expires
         
-# Upewnij się, że słowniki są zainicjalizowane na początku pliku:
-user_message_times = collections.defaultdict(list)
-user_recent_messages = collections.defaultdict(list)
-
-
-@bot.event
-async def on_message(message):
-    # 1. Ignoruj boty i wiadomości prywatne
-    if message.author.bot or not message.guild:
-        return
-
-    # 2. Admini mogą pisać bez limitów
-    if message.author.guild_permissions.administrator:
-        return
-
-    # 3. Logika Antyspamu (tylko tekst!)
-    user_id = message.author.id
-    current_time = time.time()
-
-    user_message_times[user_id].append(current_time)
-    user_message_times[user_id] = [t for t in user_message_times[user_id] if current_time - t < 5]
-    
-    user_recent_messages[user_id].append(message)
-    user_recent_messages[user_id] = user_recent_messages[user_id][-20:]
-
-    if len(user_message_times[user_id]) >= 6:
-        spam_author = message.author
-        
-        # Usuń wiadomości z historii
-        for msg in user_recent_messages[user_id]:
-            try:
-                await msg.delete()
-            except:
-                pass
-
-        user_message_times[user_id].clear()
-        user_recent_messages[user_id].clear()
-
-        # Ostrzeżenie (opcjonalne)
-        await message.channel.send(f"⚠️ {spam_author.mention} Stop spamming!", delete_after=5)
-        return
-
 def fix_economy_table():
     import os
     import sqlite3
