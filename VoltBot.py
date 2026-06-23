@@ -1081,22 +1081,26 @@ async def ban(
         await interaction.followup.send(f"❌ An error occurred: `{e}`", ephemeral=True)
 
 def add_warning_to_db(guild_id: int, user_id: int, reason: str) -> int:
-    """Zapisuje warna w parze serwer+użytkownik i zwraca aktualną liczbę ostrzeżeń."""
     base_dir = os.path.dirname(os.path.abspath(__file__))
     db_path = os.path.join(base_dir, "volt.db")
+    
+    print(f"DEBUG: Łączę się z bazą w: {db_path}") # <-- ZOBACZ TO W KONSOLI!
     
     conn = sqlite3.connect(db_path, timeout=10)
     cursor = conn.cursor()
     
     try:
-        # Zapisujemy warn przypisany do konkretnego serwera (guild_id) i użytkownika (user_id)
+        # Sprawdźmy, czy tabela w ogóle istnieje
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='warnings';")
+        if not cursor.fetchone():
+            print("❌ DEBUG: Tabela 'warnings' NIE ISTNIEJE w tej bazie!")
+        
         cursor.execute(
             "INSERT INTO warnings (guild_id, user_id, reason) VALUES (?, ?, ?)",
             (str(guild_id), str(user_id), reason)
         )
         conn.commit()
         
-        # Pobieramy sumę warnów tego użytkownika TYLKO na tym serwerze
         cursor.execute(
             "SELECT COUNT(*) FROM warnings WHERE guild_id = ? AND user_id = ?",
             (str(guild_id), str(user_id))
@@ -1104,6 +1108,9 @@ def add_warning_to_db(guild_id: int, user_id: int, reason: str) -> int:
         warn_count = cursor.fetchone()[0]
         return warn_count
         
+    except sqlite3.OperationalError as e:
+        print(f"❌ DEBUG: Error SQL: {e}") # <-- TO CI POWIE CO JEST NIE TAK
+        raise e # Przekazujemy błąd dalej do komendy
     finally:
         conn.close()
 
