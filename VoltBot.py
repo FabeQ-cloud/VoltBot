@@ -1129,7 +1129,7 @@ async def warn(interaction: discord.Interaction, user: discord.Member, reason: s
             description="You cannot issue warnings to bots.",
             color=discord.Color.orange()
         )
-        await interaction.response.send_message(embed=bot, ephemeral=True)
+        await interaction.response.send_message(embed=embed_bot, ephemeral=True)
         return
 
     # 3. Zabezpieczenie przed warnowaniem samego siebie
@@ -1139,7 +1139,7 @@ async def warn(interaction: discord.Interaction, user: discord.Member, reason: s
             description="You cannot warn yourself!",
             color=discord.Color.orange()
         )
-        await interaction.response.send_message(embed=self, ephemeral=True)
+        await interaction.response.send_message(embed=embed_self, ephemeral=True)
         return
 
     # 4. Sprawdzenie hierarchii ról (Zabezpieczenie przed warnowaniem adminów)
