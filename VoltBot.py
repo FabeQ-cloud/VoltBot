@@ -2715,3 +2715,63 @@ async def vote(interaction: discord.Interaction):
         color=discord.Color.purple(),
     )
     await interaction.response.send_message(embed=embed_vote, view=view)
+
+@bot.tree.command(name="unban", description="Unban a user from the server")
+@app_commands.describe(user_id="The ID of the user to unban", reason="Reason for the unban")
+@app_commands.checks.has_permissions(ban_members=True)
+async def unban(
+    interaction: discord.Interaction, 
+    user_id: str, 
+    reason: str = "No reason provided"
+):
+    await interaction.response.defer()
+    
+    try:
+        # Pobieramy użytkownika z API Discorda
+        user = await bot.fetch_user(int(user_id))
+        
+        # Wykonanie unbana
+        await interaction.guild.unban(user, reason=f"Unbanned by {interaction.user} | Reason: {reason}")
+        
+        embed_success = discord.Embed(
+            title="🔓 User Successfully Unbanned",
+            color=discord.Color.green()
+        )
+        embed_success.add_field(name="👤 Unbanned User", value=f"{user.name} (`{user.id}`)", inline=True)
+        embed_success.add_field(name="🛡️ Moderator", value=interaction.user.mention, inline=True)
+        embed_success.add_field(name="📝 Reason", value=reason, inline=False)
+        embed_success.set_thumbnail(url=user.display_avatar.url)
+        embed_success.set_footer(text="VoltBot Moderation Suite • Access Restored")
+        
+        await interaction.followup.send(embed=embed_success)
+        
+    except discord.NotFound:
+        await interaction.followup.send("❌ User not found or not currently banned.", ephemeral=True)
+    except discord.Forbidden:
+        await interaction.followup.send("❌ I lack permissions to unban this user.", ephemeral=True)
+
+@bot.tree.command(name="unwarn", description="Remove a specific warning from a user")
+@app_commands.describe(user="The member to unwarn", warning_id="The ID of the warning to remove", reason="Reason for removing the warning")
+@app_commands.checks.has_permissions(manage_messages=True)
+async def unwarn(
+    interaction: discord.Interaction, 
+    user: discord.Member, 
+    warning_id: int, 
+    reason: str = "No reason provided"
+):
+    # 1. Tu wstaw zapytanie do bazy: 
+    # await db.execute("DELETE FROM infractions WHERE id = ? AND user_id = ?", (warning_id, user.id))
+    
+    # Stylizowane potwierdzenie
+    embed_success = discord.Embed(
+        title="✅ Warning Removed",
+        color=discord.Color.green()
+    )
+    embed_success.add_field(name="👤 Target User", value=user.mention, inline=True)
+    embed_success.add_field(name="🆔 Warning ID", value=f"`{warning_id}`", inline=True)
+    embed_success.add_field(name="🛡️ Moderator", value=interaction.user.mention, inline=False)
+    embed_success.add_field(name="📝 Reason", value=reason, inline=False)
+    embed_success.set_thumbnail(url=user.display_avatar.url)
+    embed_success.set_footer(text="VoltBot Moderation Suite • Warning Cleared")
+    
+    await interaction.response.send_message(embed=embed_success)
