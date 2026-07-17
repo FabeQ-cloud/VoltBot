@@ -30,23 +30,18 @@ class VoteCommand(commands.Cog):
 async def setup(bot):
     await bot.add_cog(VoteCommand(bot))
 
-class VoltBot(discord.Client):
+class VoltBot(commands.Bot):
     def __init__(self):
-        intents = discord.Intents.default()
-        intents.members = True
-        intents.message_content = True
-        super().__init__(intents=intents)
-        self.tree = app_commands.CommandTree(self)
+        super().__init__(command_prefix="!", intents=discord.Intents.all())
         
         # Prawidłowe zainicjalizowanie słowników wewnątrz __init__
         self.user_message_times = defaultdict(list)
         self.user_recent_messages = defaultdict(list)
     
     async def setup_hook(self):
-        init_db() 
-        synced = await self.tree.sync()
-        print(f"[✅] Zsynchronizowano {len(synced)} komend!")
-        print(f"[✅] Baza danych zainicjalizowana.")
+        init_db() # Inicjalizacja bazy przy starcie
+        await self.tree.sync() # Synchronizacja slash komend
+        print("✅ [BOT] Komendy zsynchronizowane.")
 
     async def on_ready(self):
         print(f"[🚀] Zalogowano jako {self.user}!")
@@ -111,11 +106,11 @@ COMMANDS = [
 ]
 
 def init_db():
-    print("DEBUG: Rozpoczynam inicjalizację bazy...")
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    db_path = os.path.join(base_dir, "volt.db")
+    print("DEBUG: Inicjalizuję bazę danych w:", DB_PATH)
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+    DB_PATH = os.path.join(BASE_DIR, "volt.db")
     
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
     # 1. Licencje (Premium)
@@ -177,8 +172,8 @@ def init_db():
     
     conn.commit()
     conn.close()
-    print("✅ [DATABASE] Wszystkie tabele (w tym levels) zostały poprawnie sprawdzone/utworzone!")
-
+    print("✅ [DATABASE] Baza danych gotowa.")
+    
 def check_premium_db(guild_id: int) -> bool:
     conn = sqlite3.connect("volt.db")
     cursor = conn.cursor()
@@ -1081,23 +1076,12 @@ async def ban(
         await interaction.followup.send(f"❌ An error occurred: `{e}`", ephemeral=True)
 
 def add_warning_to_db(guild_id: int, user_id: int, reason: str) -> int:
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    db_path = os.path.join(base_dir, "volt.db")
-    
-    print(f"DEBUG: Łączę się z bazą w: {db_path}") # <-- ZOBACZ TO W KONSOLI!
-    
-    conn = sqlite3.connect(db_path, timeout=10)
+    conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    
     try:
-        # Sprawdźmy, czy tabela w ogóle istnieje
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='warnings';")
-        if not cursor.fetchone():
-            print("❌ DEBUG: Tabela 'warnings' NIE ISTNIEJE w tej bazie!")
-        
         cursor.execute(
-            "INSERT INTO warnings (guild_id, user_id, reason) VALUES (?, ?, ?)",
-            (str(guild_id), str(user_id), reason)
+            "INSERT INTO warnings (guild_id, user_id, reason, timestamp) VALUES (?, ?, ?, ?)",
+            (str(guild_id), str(user_id), reason, 0) # Wstawiamy 0 jako placeholder dla timestampu
         )
         conn.commit()
         
@@ -1107,10 +1091,6 @@ def add_warning_to_db(guild_id: int, user_id: int, reason: str) -> int:
         )
         warn_count = cursor.fetchone()[0]
         return warn_count
-        
-    except sqlite3.OperationalError as e:
-        print(f"❌ DEBUG: Error SQL: {e}") # <-- TO CI POWIE CO JEST NIE TAK
-        raise e # Przekazujemy błąd dalej do komendy
     finally:
         conn.close()
 
@@ -1119,86 +1099,34 @@ def add_warning_to_db(guild_id: int, user_id: int, reason: str) -> int:
 @bot.tree.command(name="warn", description="Issue a warning to a member")
 @app_commands.describe(user="The member to warn", reason="The reason for the warning")
 async def warn(interaction: discord.Interaction, user: discord.Member, reason: str):
-    # 1. Sprawdzenie uprawnień moderatora
+    # Zabezpieczenia
     if not interaction.user.guild_permissions.kick_members:
-        embed_no_perm = discord.Embed(
-            title="❌ Permission Denied",
-            description="You need the **Kick Members** permission to use this command.",
-            color=discord.Color.red()
-        )
-        await interaction.response.send_message(embed=embed_no_perm, ephemeral=True)
+        await interaction.response.send_message("❌ You don't have permission.", ephemeral=True)
         return
-
-    # 2. Zabezpieczenie przed warnowaniem botów
     if user.bot:
-        embed_bot = discord.Embed(
-            title="⚠️ Action Denied",
-            description="You cannot issue warnings to bots.",
-            color=discord.Color.orange()
-        )
-        await interaction.response.send_message(embed=embed_bot, ephemeral=True)
+        await interaction.response.send_message("⚠️ You cannot warn bots.", ephemeral=True)
         return
-
-    # 3. Zabezpieczenie przed warnowaniem samego siebie
     if user.id == interaction.user.id:
-        embed_self = discord.Embed(
-            title="⚠️ Action Denied",
-            description="You cannot warn yourself!",
-            color=discord.Color.orange()
-        )
-        await interaction.response.send_message(embed=embed_self, ephemeral=True)
+        await interaction.response.send_message("⚠️ You cannot warn yourself!", ephemeral=True)
         return
 
-    # 4. Sprawdzenie hierarchii ról (Zabezpieczenie przed warnowaniem adminów)
-    if interaction.user.top_role <= user.top_role and interaction.guild.owner_id != interaction.user.id:
-        embed_hierarchy = discord.Embed(
-            title="⚠️ Hierarchy Error",
-            description="You cannot warn this member because they have an equal or higher role than you.",
-            color=discord.Color.orange()
-        )
-        await interaction.response.send_message(embed=embed_hierarchy, ephemeral=True)
-        return
-
-    # Deferujemy odpowiedź – operacje na bazie i DM mogą chwilę zająć
     await interaction.response.defer(ephemeral=False)
 
-    # 5. Bezpieczne wykonanie operacji na bazie danych w osobnym wątku
-    guild_id = interaction.guild_id
+    # Operacja na bazie w osobnym wątku
     try:
-        warn_count = await asyncio.to_thread(add_warning_to_db, guild_id, user.id, reason)
-    except sqlite3.OperationalError as db_err:
-        # Jeśli w bazie danych nie ma kolumny guild_id, obsłuż błąd
-        print(f"❌ [DB WARN ERROR] Może brakować kolumny guild_id w tabeli warnings: {db_err}")
-        await interaction.followup.send("❌ Database layout error. Inform bot owner.", ephemeral=True)
-        return
-
-    # 6. Wysyłanie ostrzeżenia w wiadomości prywatnej (DM) do użytkownika
-    try:
-        embed_dm = discord.Embed(
-            title=f"⚠️ Warning Received in {interaction.guild.name}",
-            description=f"You have been formally warned by the server moderation team.",
-            color=discord.Color.orange()
-        )
-        embed_dm.add_field(name="📝 Reason", value=reason, inline=False)
-        embed_dm.add_field(name="📊 Total Warnings on this server", value=f"`{warn_count}`", inline=False)
-        embed_dm.set_footer(text="Please respect the server rules to avoid further punishments.")
-        await user.send(embed=embed_dm)
-    except discord.Forbidden:
-        pass # Ignorujemy jeśli użytkownik ma zamknięte DM-y
-
-    # 7. Wyświetlenie pięknego logu na kanale tekstowym
-    embed_success = discord.Embed(
-        title="⚠️ Member Warned",
-        color=discord.Color.orange()
-    )
-    embed_success.add_field(name="👤 Target", value=f"{user.mention} (`{user.id}`)", inline=True)
-    embed_success.add_field(name="🛡️ Moderator", value=interaction.user.mention, inline=True)
-    embed_success.add_field(name="📝 Reason", value=reason, inline=False)
-    embed_success.add_field(name="📊 Total Warnings", value=f"`{warn_count}`", inline=True)
-    embed_success.set_thumbnail(url=user.display_avatar.url)
-    embed_success.set_footer(text="VoltBot Moderation Suite")
-
-    await interaction.followup.send(embed=embed_success)
+        warn_count = await asyncio.to_thread(add_warning_to_db, interaction.guild_id, user.id, reason)
+        
+        # Sukces
+        embed = discord.Embed(title="⚠️ Member Warned", color=discord.Color.orange())
+        embed.add_field(name="👤 Target", value=f"{user.mention} (`{user.id}`)", inline=True)
+        embed.add_field(name="🛡️ Moderator", value=interaction.user.mention, inline=True)
+        embed.add_field(name="📝 Reason", value=reason, inline=False)
+        embed.add_field(name="📊 Total Warnings", value=f"`{warn_count}`", inline=True)
+        await interaction.followup.send(embed=embed)
+        
+    except Exception as e:
+        print(f"❌ ERROR: {e}")
+        await interaction.followup.send("❌ Database error. Inform bot owner.", ephemeral=True)
 
 @bot.tree.command(name="warnings", description="View the warning history of a specific member")
 @app_commands.describe(user="The member whose warnings you want to check")
