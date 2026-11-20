@@ -7,7 +7,8 @@ import asyncio
 import contextlib
 from dotenv import load_dotenv
 
-from VoltBot import bot  
+# Zmienione na 'main', ponieważ plik bota nazywa się teraz main.py
+from main import bot  
 
 @contextlib.asynccontextmanager
 async def lifespan(app_instance):
