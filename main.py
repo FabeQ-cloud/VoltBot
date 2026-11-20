@@ -2,6 +2,8 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 import database
+import secrets
+import string
 
 # Initialize database
 database.init_db()
@@ -28,16 +30,24 @@ async def ping(interaction: discord.Interaction):
     )
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
-# --- REDEEM LICENSE COMMAND ---
+# --- REDEEM LICENSE COMMAND (Z komunikatem "Thanks for purchase") ---
 @bot.tree.command(name="redeem", description="Activate your VoltBot Premium license using your purchase key.")
-@app_commands.describe(key="Enter your license key received on the website")
+@app_commands.describe(key="Enter your 16-character license key received after purchase")
 async def redeem(interaction: discord.Interaction, key: str):
-    success, message = database.activate_license(interaction.user.id, key)
+    # Wywołujemy funkcję aktywacji z bazy danych
+    success, message = database.activate_license(interaction.user.id, key.strip())
     
+    if success:
+        description = "🎉 **Thanks for your purchase!** Your Premium status has been successfully activated. Enjoy all exclusive features!"
+        color = discord.Color.green()
+    else:
+        description = f"❌ {message}"
+        color = discord.Color.red()
+
     embed = discord.Embed(
         title="✨ License Activation",
-        description=message,
-        color=discord.Color.green() if success else discord.Color.red()
+        description=description,
+        color=color
     )
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
@@ -59,5 +69,40 @@ async def premiumbot(interaction: discord.Interaction):
         title="⚡ Welcome to the VIP Zone!",
         description="You have successfully accessed the exclusive premium features of VoltBot.",
         color=discord.Color.gold()
+    )
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+@bot.tree.command(name="genkey", description="[ADMIN] Generate a 16-character premium license key.")
+@app_commands.describe(days="Duration in days (e.g., 30 for Monthly, 365 for Yearly)")
+async def genkey(interaction: discord.Interaction, days: int):
+    # 👇 TUTAJ WPISZ SWOJE PRAWDZIWE DISCORD USER ID (w liczbach)
+    OWNER_ID = 1490030330084720892  # Zastąp to swoim ID, jeśli jest inne
+    
+    # Sprawdzamy czy osoba wpisująca komendę to Ty
+    if interaction.user.id != OWNER_ID:
+        embed = discord.Embed(
+            title="⛔ Access Denied",
+            description="Only owner can generate code",
+            color=discord.Color.red()
+        )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+        return
+
+    # Jeśli to Ty, generujemy 16-znakowy kod (format: XXXX-XXXX-XXXX-XXXX)
+    alphabet = string.ascii_uppercase + string.digits
+    part1 = ''.join(secrets.choice(alphabet) for _ in range(4))
+    part2 = ''.join(secrets.choice(alphabet) for _ in range(4))
+    part3 = ''.join(secrets.choice(alphabet) for _ in range(4))
+    part4 = ''.join(secrets.choice(alphabet) for _ in range(4))
+    
+    key = f"{part1}-{part2}-{part3}-{part4}"
+    
+    # Zapis do bazy danych
+    database.create_license_key(key, duration_days=days)
+
+    embed = discord.Embed(
+        title="🔑 16-Character License Generated",
+        description=f"Successfully created a **{days}-day** premium key:\n`{key}`\n\nGive this key to your customer!",
+        color=discord.Color.green()
     )
     await interaction.response.send_message(embed=embed, ephemeral=True)
