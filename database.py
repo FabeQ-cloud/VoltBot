@@ -8,13 +8,14 @@ def init_db():
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
     
-    # Users table (premium status, expiration, balance)
+    # Users table (premium status, expiration, balance, and last daily claim)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS users (
             user_id INTEGER PRIMARY KEY,
             is_premium BOOLEAN NOT NULL DEFAULT 0,
             premium_expires TEXT,
-            balance INTEGER NOT NULL DEFAULT 0
+            balance INTEGER NOT NULL DEFAULT 0,
+            last_daily INTEGER NOT NULL DEFAULT 0
         )
     ''')
     
